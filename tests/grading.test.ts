@@ -39,3 +39,11 @@ describe('existing sheet rows', () => {
   it('updates when the grade differs', () => expect(primaryAction('id', '2', '3')).toBe('update'));
   it('needs a grade before deciding', () => expect(primaryAction('id', '2', '')).toBe('update'));
 });
+
+import { orderKey } from '../src/screens/shipping.ts';
+describe('shipping scan', () => {
+  it('treats SO numbers as sales orders and anything else as a tracking number', () => {
+    expect(orderKey(' so66192 ')).toEqual({ salesOrderNumber: 'SO66192' });
+    expect(orderKey('NZ 1234 5678')).toEqual({ trackingNumber: 'NZ12345678' });
+  });
+});
