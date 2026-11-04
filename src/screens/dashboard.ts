@@ -3,7 +3,7 @@ import { h, mount, message, askPin, nzTime, nzToday, money, busy } from '../ui.t
 import type { ScreenCtx } from '../main.ts';
 
 // Daily per-person summary and review flags. Staff see their own day; managers see everyone,
-// system health, and can manage staff badges/PINs and terminals.
+// system health, and can reset staff PINs and manage terminals.
 
 function ago(iso?: string | null) {
   if (!iso) return 'never';
@@ -98,16 +98,14 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
         };
         mount(box, h('h2', {}, 'Staff & terminals'), slot,
           h('div', { class: 'card table-wrap' }, h('table', {},
-            h('thead', {}, h('tr', {}, ['Name', 'Role', 'Badge', 'PIN', 'Actions'].map(x => h('th', {}, x)))),
+            h('thead', {}, h('tr', {}, ['Name', 'Role', 'PIN', 'Actions'].map(x => h('th', {}, x)))),
             h('tbody', {}, s.staff.map((st: J) => h('tr', {},
               h('td', {}, h('strong', {}, st.name), st.formerNames?.length ? h('div', { class: 'muted small' }, 'formerly ' + st.formerNames.join(', ')) : null, !st.active ? h('span', { class: 'chip chip-error' }, 'inactive') : null),
               h('td', {}, st.role),
-              h('td', {}, st.hasBadge ? 'Registered' : h('span', { class: 'muted' }, 'Not yet')),
               h('td', {}, st.locked ? h('span', { class: 'chip chip-error' }, 'Locked') : st.hasPin ? 'Set' : h('span', { class: 'muted' }, 'Not set')),
               h('td', {}, h('div', { class: 'row wrap' },
                 st.locked ? btn('Unlock', 'unlock', st, `Unlock ${st.name}`) : null,
                 st.hasPin ? btn('Reset PIN', 'reset_pin', st, `Reset ${st.name}'s PIN`) : null,
-                st.hasBadge ? btn('Reset badge', 'reset_badge', st, `Reset ${st.name}'s badge and PIN`) : null,
                 st.active ? btn('Deactivate', 'deactivate', st, `Deactivate ${st.name}`, 'btn btn-sm btn-ghost') : btn('Activate', 'activate', st, `Activate ${st.name}`)))))))),
           h('div', { class: 'row' }, addName, addBtn),
           h('div', { class: 'card table-wrap' }, h('table', {},

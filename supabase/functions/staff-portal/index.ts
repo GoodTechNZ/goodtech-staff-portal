@@ -175,8 +175,8 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
 async function admin(ctx: Ctx, action: string, b: J) {
   if (ctx.staff.role !== 'manager') throw new HttpError(403, 'Managers only.');
   if (action === 'staff') {
-    const rows = await rest('staff?select=id,display_name,former_names,role,active,badge_code,pin_set_at,locked_until&order=display_name');
-    return { staff: rows.map((s: J) => ({ id: s.id, name: s.display_name, formerNames: s.former_names, role: s.role, active: s.active, hasBadge: !!s.badge_code, hasPin: !!s.pin_set_at, locked: !!s.locked_until && Date.parse(s.locked_until) > Date.now() })) };
+    const rows = await rest('staff?select=id,display_name,former_names,role,active,pin_set_at,locked_until&order=display_name');
+    return { staff: rows.map((s: J) => ({ id: s.id, name: s.display_name, formerNames: s.former_names, role: s.role, active: s.active, hasPin: !!s.pin_set_at, locked: !!s.locked_until && Date.parse(s.locked_until) > Date.now() })) };
   }
   if (action === 'terminals') {
     return { terminals: await rest('portal_terminals?select=id,name,created_at,last_seen_at,revoked_at&order=created_at.desc') };
@@ -196,18 +196,17 @@ async function admin(ctx: Ctx, action: string, b: J) {
     const [cur] = await rest('staff?select=display_name,former_names&id=eq.' + id);
     if (!cur) throw new HttpError(404, 'Staff member not found.');
     await patch({ display_name: name, former_names: [...new Set([...(cur.former_names || []), cur.display_name])].filter(n => n !== name) });
-  } else if (['reset_pin', 'reset_badge', 'unlock', 'deactivate', 'activate', 'make_manager', 'make_staff'].includes(action)) {
+  } else if (['reset_pin', 'unlock', 'deactivate', 'activate', 'make_manager', 'make_staff'].includes(action)) {
     if (!id) throw new HttpError(400, 'Choose a staff member.');
     if (id === ctx.staff.id && ['deactivate', 'make_staff'].includes(action)) throw new HttpError(400, 'Ask another manager to change your own access.');
     const body: J = {
       reset_pin: { pin_hash: null, pin_set_at: null, failed_pin_attempts: 0, locked_until: null },
-      reset_badge: { badge_code: null, badge_registered_at: null, pin_hash: null, pin_set_at: null, failed_pin_attempts: 0, locked_until: null },
       unlock: { failed_pin_attempts: 0, locked_until: null },
       deactivate: { active: false }, activate: { active: true },
       make_manager: { role: 'manager' }, make_staff: { role: 'staff' },
     }[action]!;
     await patch(body);
-    if (['reset_badge', 'deactivate'].includes(action)) {
+    if (['reset_pin', 'deactivate'].includes(action)) {
       await rest('portal_sessions?staff_id=eq.' + id + '&ended_at=is.null', { method: 'PATCH', body: JSON.stringify({ ended_at: new Date().toISOString(), end_reason: 'manager_' + action }), headers: { Prefer: 'return=minimal' } });
     }
   } else if (action === 'revoke_terminal') {
@@ -233,9 +232,11 @@ async function handle(req: Request): Promise<J> {
   const terminalToken = req.headers.get('x-terminal-token') || '';
 
   if (module === 'terminal' && action === 'enrol') return await rpc('portal_terminal_enrol', { p_code: String(b.code || '').trim().toUpperCase(), p_name: String(b.name || '') });
-  if (module === 'auth' && action === 'badge') return await rpc('portal_badge', { p_terminal_token: terminalToken, p_badge: String(b.badge || '') });
+  if (module === 'auth' && action === 'staff') return { staff: await rpc('portal_staff_list', { p_terminal_token: terminalToken }) };
   if (module === 'auth' && action === 'signin') {
-    const r = await rpc('portal_sign_in', { p_terminal_token: terminalToken, p_badge: String(b.badge || ''), p_pin: b.pin ?? null, p_new_pin: b.newPin ?? null, p_claim_staff: uuidOrNull(b.claimStaffId) });
+    const staffId = uuidOrNull(b.staffId);
+    if (!staffId) throw new HttpError(400, 'Choose your name.');
+    const r = await rpc('portal_sign_in_staff', { p_terminal_token: terminalToken, p_staff: staffId, p_pin: b.pin ?? null, p_new_pin: b.newPin ?? null });
     if (!r?.ok) throw new HttpError(403, r?.error || 'Sign in failed.');
     return r;
   }

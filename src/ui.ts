@@ -135,7 +135,7 @@ export function doneSplash(title: string, lines: string[], ms = 2600): Promise<v
   return new Promise(resolve => {
     const overlay = h('div', { class: 'overlay done', role: 'status' },
       h('div', { class: 'dialog done-card' }, h('div', { class: 'done-tick', 'aria-hidden': 'true' }, '✓'), h('h2', {}, title),
-        lines.map(l => h('p', {}, l)), h('p', { class: 'muted' }, 'Signed out. Scan your badge for the next one.')));
+        lines.map(l => h('p', {}, l)), h('p', { class: 'muted' }, 'Signed out. Choose your name for the next one.')));
     document.body.appendChild(overlay);
     const finish = () => { overlay.remove(); resolve(); };
     overlay.addEventListener('click', finish);

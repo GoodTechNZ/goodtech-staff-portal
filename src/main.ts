@@ -98,7 +98,7 @@ for (const ev of ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart']) {
   window.addEventListener(ev, () => idle?.activity(), { passive: true, capture: true });
 }
 
-onSignedOut(reason => showSignIn(reason === 'idle' ? 'Signed out after 10 minutes without activity.' : 'Signed out. Scan your badge to continue.'));
+onSignedOut(reason => showSignIn(reason === 'idle' ? 'Signed out after 10 minutes without activity.' : 'Signed out. Choose your name to continue.'));
 onTerminalLost(() => showSetup());
 
 auth.terminal ? showSignIn() : showSetup();

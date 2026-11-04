@@ -6,7 +6,7 @@ project `mniqcdqajhhsrvfagmra`.
 ```
 Browser (Cloudflare Pages, static)
    │  x-terminal-token  (per enrolled terminal, localStorage)
-   │  x-session-token   (per signed-in person, memory only)
+   │  x-session-token   (per signed-in person after name + PIN, memory only)
    ▼
 supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity log, sign-out rules
    ├─ Grading  → portal_grading_* RPCs → portal_grading_outbox → sheet worker → ASNs DB / Grading tab
@@ -18,9 +18,11 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
 ## Staff sign-in
 
 - **Terminals** are enrolled once with the enrolment code (bcrypt hash in `portal_config`). Managers can revoke a terminal from the Dashboard.
-- **Badge + PIN.** The `staff` table is the roster: Crystal (formerly Wei), Li (formerly Liwei), David, Fraser (manager), Haobin, Tallula and Tristan.
-  - First use of a badge: the person picks their name from the staff who have no badge yet and sets a 4-digit PIN. PINs like 1234 or 0000 are rejected.
-  - Managers see a **badge registered** flag that day.
+- **Name + PIN.** On an enrolled terminal, staff tap their name, then enter their 4-digit PIN.
+  - The names come from the `staff` table: Crystal (formerly Wei), Li (formerly Liwei), David, Fraser (manager), Haobin, Piper, Tallula and Tristan.
+  - First use: someone with no PIN yet sets one, entering it twice. Weak PINs like 1234 or 0000 are refused.
+  - Managers see a **PIN set** flag that day so they can confirm it was really that person.
+  - A manager can reset a PIN from the Dashboard; the person then sets a new one at next sign-in.
 - **PIN again** for sensitive actions:
   - Grading: changing an existing grading record.
   - Shipping: manual IMEI override, or changing shipping settings.

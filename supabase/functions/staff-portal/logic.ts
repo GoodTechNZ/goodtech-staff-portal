@@ -65,7 +65,7 @@ export function needsPin(module: string, action: string, body: J): boolean {
   return false;
 }
 
-// A completed device/order ends the session so the next person must badge in.
+// A completed device/order ends the session so the next person must sign in again.
 export function completesWork(module: string, action: string, result: J): boolean {
   if (module === 'grading') return ['save', 'link'].includes(action) && result?.ok === true;
   if (module === 'shipping') return ['ship', 'pickup_ready', 'collect'].includes(action) && result?.ok === true;

@@ -89,7 +89,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .w-sm { width: 140px; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
-.card.narrow { width: min(460px, 100%); }
+.card.narrow { width: min(520px, 100%); }
 .card > h1 + .scan, .card > h1 + * { margin-top: 12px; }
 
 /* Controls */
@@ -160,8 +160,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .signin .stack { align-items: center; }
 .signin .scan { text-align: center; }
 .badge-icon { font-size: 2.6rem; color: var(--brand); }
-.name-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; width: 100%; }
-.btn-name { min-height: 60px; font-size: 1.05rem; }
+.name-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; width: 100%; }
+.btn-name { min-height: 72px; font-size: 1.15rem; }
 .pin { display: flex; flex-direction: column; align-items: center; gap: 14px; outline: none; }
 .pin-label { font-weight: 600; color: var(--muted); }
 .pin-dots { display: flex; gap: 14px; }
