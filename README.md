@@ -61,7 +61,7 @@ and date always come from the signed-in session.
 Flags raised:
 
 - PIN lockout, or 3+ wrong PINs
-- badge registered
+- PIN set for the first time
 - shipping override
 - 3+ scan errors
 - 3+ devices graded under 30 s apart
