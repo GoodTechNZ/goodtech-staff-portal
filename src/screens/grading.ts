@@ -2,13 +2,13 @@ import { call, ApiError, uuid, J } from '../api.ts';
 import { h, mount, message, scanInput, segmented, askPin, busy, nzTime } from '../ui.ts';
 import {
   TESTS, DESTINATIONS, GradingForm, Grade, Destination, TestResult, emptyForm, formFromRecord, problems,
-  suggestedDestination, primaryAction, payload,
+  suggestedDestination, primaryAction, payload, cleanColour, colourEditable,
 } from '../grading.ts';
 import type { ScreenCtx } from '../main.ts';
 
 type Lookup = {
   needsSelection?: boolean; serial?: string; candidates?: { recordId: string; row: number | null; grade: string; location: string; tester: string; status: string }[];
-  device: { serial: string; recordId: string | null; version: string; row: number | null; model: string; supplier?: string; shipment?: string; capacity?: string; colour?: string };
+  device: { serial: string; recordId: string | null; version: string; row: number | null; model: string; supplier?: string; shipment?: string; capacity?: string; colour?: string; listedColour?: string };
   record: J; sync: string;
 };
 
@@ -56,7 +56,29 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
     let destinationTouched = !!f.destination;
 
     const gradeSeg = segmented<Grade>({ name: 'Grade', options: ['1', '2', '3'], value: f.grade, className: 'seg-xl', labels: { '1': 'Grade 1', '2': 'Grade 2', '3': 'Grade 3' }, onChange: v => { f.grade = v; refresh(); } });
-    const colour = h('input', { type: 'text', value: f.colour, maxLength: 150, oninput: () => { f.colour = colour.value; refresh(); } });
+    // Colour: the supplier's listed colour is used as-is unless the tester changes it. A typed
+    // colour is only required when the supplier didn't list one (X).
+    const listed = cleanColour(d.listedColour ?? d.colour);
+    if (!cleanColour(f.colour)) f.colour = listed;
+    let editingColour = colourEditable(listed, f.colour);
+    const colour = h('input', { type: 'text', value: f.colour, maxLength: 150, placeholder: listed ? '' : 'Not listed by supplier — enter the colour', 'aria-label': 'Colour', oninput: () => { f.colour = colour.value; refresh(); } });
+    const colourField = h('div', { class: 'field grow' });
+    function renderColour() {
+      const label = h('span', { class: 'label' }, 'Colour');
+      if (!editingColour) {
+        colourField.replaceChildren(label, h('div', { class: 'row colour-listed' },
+          h('strong', {}, listed), h('span', { class: 'muted small' }, 'from supplier'),
+          h('button', { type: 'button', class: 'btn btn-sm', onclick: () => { editingColour = true; renderColour(); colour.focus(); colour.select(); } }, 'Change')));
+        return;
+      }
+      colour.value = f.colour;
+      const hint = listed
+        ? h('div', { class: 'row small' }, h('span', { class: 'muted' }, `Supplier lists ${listed}.`),
+            h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: () => { f.colour = listed; editingColour = false; renderColour(); refresh(); } }, 'Use supplier colour'))
+        : h('span', { class: 'muted small' }, 'Supplier colour is X — enter the colour.');
+      colourField.replaceChildren(label, colour, hint);
+    }
+    renderColour();
     const battery = h('input', { type: 'text', inputMode: 'numeric', value: f.battery, maxLength: 3, placeholder: '0–100', oninput: () => { f.battery = battery.value; refresh(); } });
     const statusText = h('textarea', { rows: 2, maxLength: 1000, placeholder: 'Required when a test fails', oninput: () => { f.status = statusText.value; refresh(); } }, f.status);
     const notes = h('textarea', { rows: 2, maxLength: 5000, oninput: () => { f.notes = notes.value; } }, f.notes);
@@ -109,7 +131,7 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
             if (lastAttempt?.body !== key) lastAttempt = { body: key, saveId: uuid() };
             r = await call('grading.save', {
               serial: d.serial, saveId: lastAttempt.saveId, version: act === 'update' ? d.version : '0',
-              recordId: act === 'update' ? d.recordId : null, record, pin,
+              recordId: act === 'update' ? d.recordId : null, record, pin, listedColour: listed,
             });
           }
           const lines = [`${d.model} · ${d.serial}`, `Grade ${f.grade}${f.destination && !r.linked ? ' → ' + f.destination : ''}`];
@@ -131,8 +153,8 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
         existing ? message('warn', `Already graded${d.row ? ' (sheet row ' + d.row + ')' : ''}: grade ${existingGrade || '—'} by ${existing.tester || 'unknown'}${existing.date ? ' on ' + existing.date : ''}${existing.location ? ', ' + existing.location : ''}. Grade it yourself — if you agree, it links to that row; a different grade updates it with your PIN.`) : null),
       h('section', { class: 'card stack' },
         h('div', { class: 'field' }, h('span', { class: 'label' }, 'Grade'), gradeSeg),
-        h('div', { class: 'row wrap' },
-          h('label', { class: 'field grow' }, h('span', { class: 'label' }, 'Colour'), colour),
+        h('div', { class: 'row wrap top' },
+          colourField,
           h('label', { class: 'field w-sm' }, h('span', { class: 'label' }, 'Battery %'), battery)),
         h('div', { class: 'field' }, h('div', { class: 'row between' }, h('span', { class: 'label' }, 'Functional tests'), allPass), h('div', { class: 'tests' }, testSegs.map(x => x.row))),
         h('label', { class: 'field' }, h('span', { class: 'label' }, 'Device status'), statusText),

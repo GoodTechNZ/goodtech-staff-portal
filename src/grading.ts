@@ -39,10 +39,29 @@ export function formFromRecord(record: Record<string, any>, deviceColour: string
   };
 }
 
+/** Supplier colours that mean "not listed". The database applies the same rule. */
+export function cleanColour(v: string | null | undefined): string {
+  const c = String(v ?? '').replace(/^[\s*]+/, '').trim();
+  return ['X', '#N/A', 'N/A'].includes(c.toUpperCase()) ? '' : c;
+}
+
+/** The colour field is a typed input when the supplier didn't list one, or when the tester is
+ *  overriding it (including an existing record whose colour differs from the supplier's). */
+export function colourEditable(listed: string, colour: string): boolean {
+  const l = cleanColour(listed);
+  return !l || (!!colour.trim() && colour.trim().toLowerCase() !== l.toLowerCase());
+}
+
+/** Set when the saved colour differs from the supplier's listed colour, for the activity log. */
+export function colourOverride(listed: string, colour: string): { from: string; to: string } | null {
+  const l = cleanColour(listed), c = colour.trim();
+  return l && c && l.toLowerCase() !== c.toLowerCase() ? { from: l, to: c } : null;
+}
+
 export function problems(f: GradingForm): string[] {
   const out: string[] = [];
   if (!f.grade) out.push('Select a grade.');
-  if (!f.colour.trim() || f.colour.trim().toUpperCase() === 'X') out.push('Enter the colour.');
+  if (!cleanColour(f.colour)) out.push('Enter the colour.');
   if (f.battery.trim() && (!/^\d{1,3}$/.test(f.battery.trim()) || Number(f.battery) > 100)) out.push('Battery must be 0–100.');
   const missing = TESTS.filter(t => !f.tests[t]);
   if (missing.length) out.push(`Record ${missing.length === 1 ? 'the ' + missing[0] + ' test' : missing.length + ' more tests'}.`);

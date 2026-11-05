@@ -23,6 +23,7 @@ describe('gradingRecord', () => {
     expect(() => gradingRecord({ grade: '1', colour: 'Black', destination: 'Ready For Sale', tests: {} }, 'Li', 'd')).toThrow(HttpError);
     expect(() => gradingRecord({ grade: '1', colour: 'Black', destination: 'Ready For Sale', tests: allPass, battery: '101' }, 'Li', 'd')).toThrow(/Battery/);
     expect(() => gradingRecord({ grade: '1', colour: 'x', destination: 'Ready For Sale', tests: allPass }, 'Li', 'd')).toThrow(/colour/);
+    expect(() => gradingRecord({ grade: '1', colour: '#N/A', destination: 'Ready For Sale', tests: allPass }, 'Li', 'd')).toThrow(/colour/);
     expect(() => gradingRecord({ grade: '4', colour: 'Black', destination: 'Ready For Sale', tests: allPass }, 'Li', 'd')).toThrow(/grade/);
   });
 });

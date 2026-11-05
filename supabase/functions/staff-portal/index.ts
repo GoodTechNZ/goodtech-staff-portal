@@ -86,7 +86,10 @@ async function grading(ctx: Ctx, action: string, b: J) {
     const saveId = uuidOrNull(b.saveId);
     if (!saveId) throw new HttpError(400, 'Invalid save request. Refresh and scan again.');
     const record = gradingRecord(b.record, ctx.staff.name, nzDate());
-    const details = { grade: record.grade, destination: record.destination, update: !!recordId, saveId };
+    // The screen sends the supplier's listed colour so an override shows in the activity log.
+    const listed = String(b.listedColour ?? '').trim().slice(0, 150);
+    const colourOverride = listed && listed.toLowerCase() !== String(record.colour).toLowerCase() ? { from: listed, to: record.colour } : null;
+    const details = { grade: record.grade, destination: record.destination, update: !!recordId, saveId, ...(colourOverride ? { colourOverride } : {}) };
     try {
       const result = await rpc('portal_grading_save', { p: { serial, saveId, owner: ctx.staff.id, version: String(b.version ?? '0'), recordId, record } });
       await log(ctx, 'grading', 'save', serial, result.linked ? 'linked' : 'ok', { ...details, linkedRow: result.linkedRow ?? null });

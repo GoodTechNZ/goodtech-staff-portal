@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TESTS, emptyForm, formFromRecord, problems, primaryAction, suggestedDestination, GradingForm } from '../src/grading.ts';
+import { TESTS, cleanColour, colourEditable, colourOverride, emptyForm, formFromRecord, problems, primaryAction, suggestedDestination, GradingForm } from '../src/grading.ts';
 
 function complete(over: Partial<GradingForm> = {}): GradingForm {
   return { ...emptyForm('Black'), grade: '2', destination: 'Ready For Sale', tests: Object.fromEntries(TESTS.map(t => [t, 'Pass'])), ...over };
@@ -45,5 +45,25 @@ describe('shipping scan', () => {
   it('treats SO numbers as sales orders and anything else as a tracking number', () => {
     expect(orderKey(' so66192 ')).toEqual({ salesOrderNumber: 'SO66192' });
     expect(orderKey('NZ 1234 5678')).toEqual({ trackingNumber: 'NZ12345678' });
+  });
+});
+
+describe('colour', () => {
+  it('treats X, #N/A and * as not listed', () => {
+    for (const v of ['X', 'x', '#N/A', 'n/a', '*', ' ', '']) expect(cleanColour(v)).toBe('');
+    expect(cleanColour('*Midnight')).toBe('Midnight');
+    expect(problems(complete({ colour: '#N/A' }))).toContain('Enter the colour.');
+  });
+  it('only asks for a typed colour when the supplier has none', () => {
+    expect(colourEditable('X', '')).toBe(true);
+    expect(colourEditable('', '')).toBe(true);
+    expect(colourEditable('Midnight', 'Midnight')).toBe(false);
+    expect(colourEditable('Midnight', 'midnight')).toBe(false);
+    expect(colourEditable('Midnight', 'Starlight')).toBe(true);
+  });
+  it('flags overrides of the supplier colour', () => {
+    expect(colourOverride('White', 'Black')).toEqual({ from: 'White', to: 'Black' });
+    expect(colourOverride('White', 'white')).toBeNull();
+    expect(colourOverride('X', 'Black')).toBeNull();
   });
 });

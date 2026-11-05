@@ -36,7 +36,7 @@ export function gradingRecord(input: J, tester: string, today: string): J {
   const destination = String(input?.destination ?? '');
   if (!(DESTINATIONS as readonly string[]).includes(destination)) throw new HttpError(400, 'Select where the device goes.');
   const colour = String(input?.colour ?? '').trim();
-  if (!colour || colour.length > 150 || colour.toUpperCase() === 'X') throw new HttpError(400, 'Enter the colour.');
+  if (!colour || colour.length > 150 || ['X', '#N/A', 'N/A', '*'].includes(colour.toUpperCase())) throw new HttpError(400, 'Enter the colour.');
   const battery = String(input?.battery ?? '').trim();
   if (battery && (!/^\d{1,3}$/.test(battery) || Number(battery) > 100)) throw new HttpError(400, 'Battery must be 0–100.');
   const tests: J = {};
