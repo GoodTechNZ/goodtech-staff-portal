@@ -5,9 +5,11 @@
   --text: #17201c;
   --muted: #5d6762;
   --line: #d9ddd7;
-  --brand: #0f6e56;
+  /* GoodTech orange. --brand fills buttons and selections; --brand-text is the darker shade for orange text on light backgrounds. */
+  --brand: #f26522;
   --brand-ink: #ffffff;
-  --brand-soft: #e1f2ec;
+  --brand-soft: #fdeadf;
+  --brand-text: #b8440f;
   --danger: #b42318;
   --danger-soft: #fdecea;
   --warn: #8a5a00;
@@ -33,9 +35,10 @@
     --text: #e8ece9;
     --muted: #9aa49f;
     --line: #2e3632;
-    --brand: #37b98f;
-    --brand-ink: #06120d;
-    --brand-soft: #173329;
+    --brand: #ff8a3d;
+    --brand-ink: #1a0c03;
+    --brand-soft: #3a2012;
+    --brand-text: #ffa766;
     --danger: #ff7b6b;
     --danger-soft: #3a1c18;
     --warn: #f2c14e;
@@ -70,7 +73,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .spacer { flex: 1; }
 .tab { border: 0; background: transparent; padding: 10px 16px; border-radius: 10px; font-weight: 600; color: var(--muted); cursor: pointer; min-height: 44px; }
 .tab:hover { background: var(--surface-2); }
-.tab.on { background: var(--brand-soft); color: var(--brand); }
+.tab.on { background: var(--brand-soft); color: var(--brand-text); }
 .who { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
 .who-name { font-weight: 700; }
 .countdown { font-weight: 600; font-size: 0.9rem; }
@@ -159,7 +162,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .signin { text-align: center; }
 .signin .stack { align-items: center; }
 .signin .scan { text-align: center; }
-.badge-icon { font-size: 2.6rem; color: var(--brand); }
 .name-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; width: 100%; }
 .btn-name { min-height: 72px; font-size: 1.15rem; }
 .pin { display: flex; flex-direction: column; align-items: center; gap: 14px; outline: none; }
