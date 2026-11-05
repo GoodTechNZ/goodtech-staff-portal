@@ -1,5 +1,6 @@
 // Client for the staff-portal gateway. The terminal token is kept in localStorage (one per
-// enrolled terminal); the staff session token only lives in memory, so a reload signs out.
+// enrolled terminal). The staff session is kept there too so a page refresh doesn't sign anyone
+// out; the server still ends it after 5 minutes without activity or on Sign out.
 
 export const API_URL: string =
   import.meta.env.VITE_PORTAL_API || 'https://mniqcdqajhhsrvfagmra.supabase.co/functions/v1/staff-portal';
@@ -12,20 +13,29 @@ export class ApiError extends Error {
 }
 
 const TERMINAL_KEY = 'gt.portal.terminal';
+const SESSION_KEY = 'gt.portal.session';
 
 function readTerminal(): { token: string; name: string } | null {
   try { return JSON.parse(localStorage.getItem(TERMINAL_KEY) || 'null'); } catch { return null; }
 }
 
+function readSession(): { token: string; staff: Staff } | null {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
+}
+const saved = readSession();
+
 export const auth = {
   terminal: readTerminal(),
-  sessionToken: '' as string,
-  staff: null as Staff | null,
+  sessionToken: saved?.token || '',
+  staff: (saved?.staff || null) as Staff | null,
   setTerminal(t: { token: string; name: string } | null) {
     this.terminal = t;
     try { t ? localStorage.setItem(TERMINAL_KEY, JSON.stringify(t)) : localStorage.removeItem(TERMINAL_KEY); } catch { /* private mode */ }
   },
-  setSession(token: string, staff: Staff | null) { this.sessionToken = token; this.staff = staff; },
+  setSession(token: string, staff: Staff | null) {
+    this.sessionToken = token; this.staff = staff;
+    try { token && staff ? localStorage.setItem(SESSION_KEY, JSON.stringify({ token, staff })) : localStorage.removeItem(SESSION_KEY); } catch { /* private mode */ }
+  },
 };
 
 type Listener = (reason: string) => void;

@@ -1,5 +1,6 @@
 import './styles.css';
 import { auth, call, onSignedOut, onTerminalLost, lastServerContact } from './api.ts';
+import type { Staff } from './api.ts';
 import { IdleTimer } from './idle.ts';
 import { h, mount, doneToast } from './ui.ts';
 import { setupScreen } from './screens/setup.ts';
@@ -101,4 +102,14 @@ for (const ev of ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart']) {
 onSignedOut(reason => showSignIn(reason === 'idle' ? 'Signed out after 5 minutes without activity.' : 'Signed out. Choose your name to continue.'));
 onTerminalLost(() => showSetup());
 
-auth.terminal ? showSignIn() : showSetup();
+// After a refresh, resume the saved session if the server still accepts it.
+async function start() {
+  if (!auth.terminal) return showSetup();
+  if (!auth.sessionToken) return showSignIn();
+  try {
+    const r = await call<{ staff: Staff }>('auth.touch');
+    auth.setSession(auth.sessionToken, r.staff);
+    showApp();
+  } catch { if (auth.terminal) showSignIn(); }
+}
+start();
