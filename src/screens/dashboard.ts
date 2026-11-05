@@ -132,7 +132,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
     const asnNote = () => asn ? `ASNs DB read ${ago(asn.syncedAt)}${asnStale ? ' (stale)' : ''}` : 'Waiting for ASNs DB sync';
     const ageNote = (s: J) => s.averageAgeDays != null ? `Avg age ${s.averageAgeDays} d · oldest ${s.oldestAgeDays ?? '—'} d` : undefined;
     stamp.textContent = `Updated ${nzTime(r.generatedAt)}`;
-    const printBtn = h('button', { type: 'button', class: 'btn btn-sm', disabled: !o.new.count }, o.new.count ? `Print pick lists (${o.new.count})` : 'No new orders');
+    const printBtn = h('button', { type: 'button', class: 'btn btn-primary', disabled: !o.new.count }, o.new.count ? `Print pick lists (${o.new.count})` : 'No new orders');
     printBtn.addEventListener('click', () => printPickLists(printBtn));
     mount(body,
       section('Orders', printBtn,
