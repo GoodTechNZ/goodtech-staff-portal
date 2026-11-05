@@ -9,13 +9,13 @@
  * It only reads the sheet; nothing in the sheet is changed.
  *
  * Setup (once), in ASNs DB → Extensions → Apps Script:
- *   1. Add a script file, paste this in and save.
+ *   1. Add a script file, delete the empty myFunction it starts with, paste this in and save.
  *   2. Project Settings → Script properties → add PORTAL_SYNC_TOKEN with the token you were given.
  *   3. Run installAsnOpsTrigger once and approve the permissions. It sends the first snapshot and
  *      schedules the rest.
  */
 
-var PORTAL_URL = 'https://mniqcdqajhhsrvfagmra.supabase.co/functions/v1/staff-portal';
+var ASN_OPS_PORTAL_URL = 'https://mniqcdqajhhsrvfagmra.supabase.co/functions/v1/staff-portal';
 
 function asnOpsSync() {
   var token = PropertiesService.getScriptProperties().getProperty('PORTAL_SYNC_TOKEN');
@@ -43,7 +43,7 @@ function asnOpsSync() {
     if (order) shipments.push({ order: order, warehouse: c[1], delivered: c[37] });
   }
 
-  var res = UrlFetchApp.fetch(PORTAL_URL, {
+  var res = UrlFetchApp.fetch(ASN_OPS_PORTAL_URL, {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     headers: { 'x-sync-token': token },
     payload: JSON.stringify({ action: 'sync.asn', rowsTotal: total, rows: rows, shipments: shipments }),
