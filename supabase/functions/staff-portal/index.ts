@@ -175,6 +175,7 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
     ]);
     return { day, manager, people, health };
   }
+  if (action === 'picklists') return { orders: await rpc('portal_new_order_pick_lists') };
   if (action === 'ops') {
     const [ops, asn] = await Promise.all([rpc('portal_ops_dashboard'), rpc('asn_ops_summary')]);
     return { ...ops, asn };

@@ -1,5 +1,5 @@
 import { call, ApiError, J } from '../api.ts';
-import { h, mount, message, nzTime } from '../ui.ts';
+import { h, mount, message, nzTime, busy } from '../ui.ts';
 import type { ScreenCtx } from '../main.ts';
 
 // Operations at a glance: orders by stage, pick-ups, high alert, returns, testing, and Cin7
@@ -9,6 +9,7 @@ import type { ScreenCtx } from '../main.ts';
 type Doc = { document_number: string; reference?: string; party?: string; document_date: string; business_days?: number; stage?: string; is_pickup?: boolean };
 type StockItem = { sku: string; name: string; qty: number; age_days: number | null };
 type AsnDevice = { serial: string; order_number: string; grade: string; location: string; status: string };
+type PickOrder = { document_number: string; reference: string; party: string; document_date: string; carrier: string; is_pickup: boolean; address: string; note: string | null; lines: { sku: string; name: string; qty: number }[] };
 type AsnOrder = { order_number: string; shipment: string; delivered: string; devices: number };
 
 function ago(iso?: string | null) {
@@ -29,7 +30,7 @@ export function daysSince(d: string, now = new Date()): number {
 }
 
 type CardOpts = {
-  title: string; count?: number | null; unit?: string; note: string; tone?: 'alert' | 'muted';
+  title: string; count?: number | null; unit?: string; note?: string; tone?: 'alert' | 'muted';
   status?: string; drill?: () => HTMLElement; drillLabel?: string;
 };
 
@@ -56,7 +57,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
         } }, h('span', {}, o.drillLabel || 'Open queue'), h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→'))
       : null;
     return h('article', { class: 'ops-card' + (o.tone === 'muted' ? ' muted-card' : '') },
-      h('h3', {}, o.title), big, h('p', { class: 'muted small ops-note' }, o.note), foot, detail);
+      h('h3', {}, o.title), big, o.note ? h('p', { class: 'muted small ops-note' }, o.note) : h('div', { class: 'ops-note' }), foot, detail);
   }
 
   function docTable(rows: Doc[], extra?: (d: Doc) => string) {
@@ -89,10 +90,36 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
       h('td', {}, d.status || h('span', { class: 'muted' }, '—'))))));
   }
 
-  function section(title: string, aside: string, ...cards: HTMLElement[]) {
+  function section(title: string, action: HTMLElement | null, ...cards: HTMLElement[]) {
     return h('section', { class: 'stack' },
-      h('div', { class: 'row between' }, h('h2', {}, title), h('span', { class: 'muted small' }, aside)),
+      h('div', { class: 'row between' }, h('h2', {}, title), action),
       h('div', { class: 'ops-grid' }, cards));
+  }
+
+  // Pick lists for every New order, one page each, printed from a hidden print-only container.
+  async function printPickLists(button: HTMLButtonElement) {
+    await busy(button, async () => {
+      try {
+        const { orders } = await call<{ orders: PickOrder[] }>('dashboard.picklists');
+        if (!orders.length) { button.textContent = 'No new orders'; return; }
+        document.getElementById('print-root')?.remove();
+        const printed = new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'short' }).format(new Date());
+        const root = h('div', { id: 'print-root' }, orders.map(o => h('section', { class: 'pick-page' },
+          h('div', { class: 'pick-head' },
+            h('div', {}, h('div', { class: 'pick-so' }, o.document_number), h('div', {}, o.party || ''), o.reference ? h('div', { class: 'muted' }, o.reference) : null),
+            h('div', { class: 'pick-meta' }, h('div', {}, 'Ordered ' + shortDate(o.document_date)), h('div', { class: 'pick-method' }, o.is_pickup ? 'PICK-UP' : 'COURIER'), h('div', { class: 'muted' }, o.carrier))),
+          !o.is_pickup && o.address ? h('div', { class: 'pick-address' }, o.address) : null,
+          h('table', { class: 'pick-table' },
+            h('thead', {}, h('tr', {}, h('th', {}, '✓'), h('th', {}, 'Qty'), h('th', {}, 'SKU'), h('th', {}, 'Product'), h('th', {}, 'IMEI / serial'))),
+            h('tbody', {}, o.lines.map(l => h('tr', {}, h('td', { class: 'tick' }, '☐'), h('td', { class: 'qty' }, String(l.qty)), h('td', { class: 'mono' }, l.sku), h('td', {}, l.name), h('td', { class: 'serial' }))))),
+          o.note ? h('div', { class: 'pick-note' }, 'Note: ' + o.note) : null,
+          h('div', { class: 'pick-foot' }, h('span', {}, 'Picked by ____________________'), h('span', { class: 'muted' }, `Printed ${printed}`)))));
+        document.body.appendChild(root);
+        const done = () => { root.remove(); window.removeEventListener('afterprint', done); };
+        window.addEventListener('afterprint', done);
+        window.print();
+      } catch (err) { mount(body, message('error', err instanceof ApiError ? err.message : 'Pick lists could not be loaded.')); }
+    });
   }
 
   function render(r: J) {
@@ -102,42 +129,43 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
     // and flag the source as stale if the sheet hasn't synced for 30 minutes.
     const asn = r.asn && r.asn.syncedAt ? r.asn : null;
     const asnStale = asn && Date.now() - Date.parse(asn.syncedAt) > 30 * 60000;
-    const asnNote = (text: string) => asn ? `${text} · ASNs DB read ${ago(asn.syncedAt)}${asnStale ? ' (stale)' : ''}` : 'Waiting for the ASNs DB sync script to run.';
-    const oldest = (x: J) => x.oldest ? `Oldest ${shortDate(x.oldest)} (${daysSince(x.oldest)} d)` : 'None waiting';
-    const ageNote = (s: J) => s.averageAgeDays != null ? `Average stock age ${s.averageAgeDays} d · oldest ${s.oldestAgeDays ?? '—'} d` : 'Stock age not available';
+    const asnNote = () => asn ? `ASNs DB read ${ago(asn.syncedAt)}${asnStale ? ' (stale)' : ''}` : 'Waiting for ASNs DB sync';
+    const ageNote = (s: J) => s.averageAgeDays != null ? `Avg age ${s.averageAgeDays} d · oldest ${s.oldestAgeDays ?? '—'} d` : undefined;
     stamp.textContent = `Updated ${nzTime(r.generatedAt)}`;
+    const printBtn = h('button', { type: 'button', class: 'btn btn-sm', disabled: !o.new.count }, o.new.count ? `Print pick lists (${o.new.count})` : 'No new orders');
+    printBtn.addEventListener('click', () => printPickLists(printBtn));
     mount(body,
-      section('Orders', 'From order to handover',
-        card({ title: 'New', count: o.new.count, unit: 'orders', note: `Awaiting picking · ${oldest(o.new)}`, drill: () => docTable(lists.new, d => d.is_pickup ? 'Pick-up' : '') }),
-        card({ title: 'Picked', count: o.picked.count, unit: 'orders', note: `Picked · awaiting packing / shipping · ${oldest(o.picked)}`, drill: () => docTable(lists.picked, d => d.is_pickup ? 'Pick-up' : '') }),
-        card({ title: 'Packed · courier', count: o.packed.count, unit: 'orders', note: `Packed, awaiting shipping · ${oldest(o.packed)}`, drill: () => docTable(lists.packed) }),
-        card({ title: 'Awaiting pick-up', count: o.pickup.count, unit: 'orders', note: `Ready email sent, not yet collected · ${oldest(o.pickup)}`, drill: () => docTable(lists.pickup, d => `${daysSince(d.document_date)} d waiting`) }),
-        card({ title: 'High alert', count: o.alert.count, unit: 'orders', tone: 'alert', note: 'Open orders more than 1 business day old, any stage', drillLabel: 'Review overdue orders',
-          drill: () => docTable(lists.alert, d => `${d.business_days} business d · ${(d.stage || '').toLowerCase()}`) })),
-      section('Returns', 'Jotform service requests',
-        card({ title: 'Untriaged requests', count: r.returns.untriaged, unit: `of ${r.returns.total}`, tone: 'muted', note: 'Warranty, change-of-mind and repair requests not yet triaged. Trade-ins excluded. Receipt at GT is not recorded yet.' }),
-        card({ title: 'Received at GT', count: null, status: 'Setup needed', note: 'Receipt and closure are not recorded for returns yet.' })),
-      section('Testing', 'ASNs DB',
+      section('Orders', printBtn,
+        card({ title: 'New', count: o.new.count, unit: 'orders', drill: () => docTable(lists.new, d => d.is_pickup ? 'Pick-up' : '') }),
+        card({ title: 'Picked', count: o.picked.count, unit: 'orders', drill: () => docTable(lists.picked, d => d.is_pickup ? 'Pick-up' : '') }),
+        card({ title: 'Packed · courier', count: o.packed.count, unit: 'orders', drill: () => docTable(lists.packed) }),
+        card({ title: 'Awaiting pick-up', count: o.pickup.count, unit: 'orders', drill: () => docTable(lists.pickup, d => `${daysSince(d.document_date)} d waiting`) }),
+        card({ title: 'High alert', count: o.alert.count, unit: 'orders', tone: 'alert', note: 'Over 1 business day old', drillLabel: 'Review overdue orders',
+          drill: () => docTable(lists.alert, d => [`${d.business_days} business d`, (d.stage || '').toLowerCase(), d.is_pickup ? 'Pick-up' : ''].filter(Boolean).join(' · ')) })),
+      section('Testing', null,
         card({ title: 'Received · not tested', count: asn ? asn.untested : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
-          note: asnNote('Delivered in Shipment Check, no grade yet'), drillLabel: 'Review received devices', drill: asn ? () => asnOrderTable(asn.lists.untested) : undefined }),
+          note: asnNote(), drillLabel: 'Review received devices', drill: asn ? () => asnOrderTable(asn.lists.untested) : undefined }),
         card({ title: 'Graded · not POed', count: asn ? asn.gradedNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
-          note: asnNote(asn ? `${asn.readyForPo} ready for PO · ${asn.repairsNoPo} repairs · ${asn.lockedNoPo} locked` : ''), drillLabel: 'Review ready for PO', drill: asn ? () => asnDeviceTable(asn.lists.ready) : undefined }),
+          note: asn ? `${asn.readyForPo} ready for PO · ${asn.repairsNoPo} repairs · ${asn.lockedNoPo} locked` : asnNote(), drillLabel: 'Review ready for PO', drill: asn ? () => asnDeviceTable(asn.lists.ready) : undefined }),
         card({ title: 'Grading sheet sync', count: g.pending ?? 0, unit: 'waiting to write', tone: g.conflicts > 0 ? 'alert' : undefined,
-          note: `${g.conflicts ?? 0} conflict${g.conflicts === 1 ? '' : 's'} to review · worker ran ${ago(g.workerAt)} · sheet imported ${ago(g.importAt)}` })),
-      section('Repairs & unlocking', 'Cin7 stock & ASNs DB',
+          note: `${g.conflicts ?? 0} conflict${g.conflicts === 1 ? '' : 's'} to review` })),
+      section('Repairs & unlocking', null,
         card({ title: 'Repairs · Cin7', count: rep.devices, unit: 'devices', note: ageNote(rep), drill: () => stockTable(rep.items) }),
         card({ title: 'Locked · Cin7', count: lock.devices, unit: 'devices', note: ageNote(lock), drill: () => stockTable(lock.items) }),
         card({ title: 'Repairs · not POed', count: asn ? asn.repairsNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
-          note: asnNote('Graded with a fault note, no PO in ASNs'), drillLabel: 'Review ASN repairs', drill: asn ? () => asnDeviceTable(asn.lists.repairs) : undefined }),
+          note: asnStale || !asn ? asnNote() : undefined, drillLabel: 'Review ASN repairs', drill: asn ? () => asnDeviceTable(asn.lists.repairs) : undefined }),
         card({ title: 'Locked · not POed', count: asn ? asn.lockedNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
-          note: asnNote('Lock / MDM / RML status or location, no PO in ASNs'), drillLabel: 'Review ASN locked devices', drill: asn ? () => asnDeviceTable(asn.lists.locked) : undefined })),
+          note: asnStale || !asn ? asnNote() : undefined, drillLabel: 'Review ASN locked devices', drill: asn ? () => asnDeviceTable(asn.lists.locked) : undefined })),
+      section('Returns', null,
+        card({ title: 'Untriaged requests', count: r.returns.untriaged, unit: `of ${r.returns.total}`, tone: 'muted' }),
+        card({ title: 'Received at GT', count: null, status: 'Not recorded yet' })),
       h('details', { class: 'ops-defs' },
         h('summary', {}, 'Count definitions & data freshness'),
         h('p', { class: 'small muted' }, 'Orders count once per open Cin7 sale, excluding quotes, drafts, voided, cancelled and completed sales. New = not picked. Picked = picked, not yet packed. Packed · courier = packed, not shipped, not a pick-up. Awaiting pick-up = ready notification recorded in the portal, not yet collected.'),
         h('p', { class: 'small muted' }, 'High alert uses the order date as day zero and counts Monday–Friday after it; more than 1 business day is overdue (a Friday order is overdue on Tuesday). It includes every open order, including shipped orders still awaiting invoice. NZ public holidays are not excluded yet.'),
         h('p', { class: 'small muted' }, 'Repairs and Locked count devices (phones, watches, tablets, laptops) on hand in the Cin7 Repairs and Locked Devices locations. Age is quantity-weighted stock age from purchase receipts, not time spent in the location.'),
         h('p', { class: 'small muted' }, 'Testing and "not POed" come from ASNs DB, read every 10 minutes. Received · not tested: no grade (column AA) on an order whose Shipment Check row has a Delivered date (column AL). Not POed: column AG blank and graded; Locked if status or location mentions lock, MDM or RML, Repairs for any other fault note or a Repairs location, otherwise ready for PO. Each serial counts once.'),
-        h('p', { class: 'small muted' }, `Sales sync ${ago(r.freshness.orders)} · Stock sync ${ago(r.freshness.stock)} · Latest grading change ${ago(r.freshness.grading)} · Returns sync ${ago(r.freshness.returns)}`)));
+        h('p', { class: 'small muted' }, `Sales sync ${ago(r.freshness.orders)} · Stock sync ${ago(r.freshness.stock)} · Latest grading change ${ago(r.freshness.grading)} · ASNs DB read ${asn ? ago(asn.syncedAt) : 'never'} · Grading sheet worker ${ago(g.workerAt)} · Returns sync ${ago(r.freshness.returns)}`)));
   }
 
   async function load() {
@@ -148,11 +176,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
     finally { refreshBtn.disabled = false; }
   }
 
-  mount(root,
-    h('section', { class: 'ops-head row between wrap' },
-      h('div', {}, h('div', { class: 'eyebrow' }, 'GoodTech operations'), h('h1', { class: 'ops-title' }, 'At a glance.'), h('p', { class: 'muted' }, 'The next action, in one place.')),
-      h('div', { class: 'row' }, stamp, refreshBtn)),
-    body);
+  mount(root, h('section', { class: 'card row between wrap' }, h('h1', {}, 'Dashboard'), h('div', { class: 'row' }, stamp, refreshBtn)), body);
   load();
   return root;
 }
