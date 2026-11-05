@@ -12,7 +12,8 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
    ├─ Grading  → portal_grading_* RPCs → portal_grading_outbox → sheet worker → ASNs DB / Grading tab
    ├─ Shipping → existing staff-shipping function (Cin7, eShip, Shopify)
    ├─ Sales    → existing staff-sales-desk function (Cin7)
-   └─ Dashboard→ portal_daily_summary / portal_health
+   ├─ Dashboard→ portal_ops_dashboard (orders, pick-ups, high alert, returns, Cin7 Repairs/Locked)
+   └─ Admin    → portal_daily_summary / portal_health, staff PINs and terminals
 ```
 
 ## Staff sign-in

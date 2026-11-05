@@ -1,9 +1,13 @@
-import { auth, call, ApiError, J } from '../api.ts';
-import { h, mount, message, askPin, nzTime, nzToday, money, busy } from '../ui.ts';
+import { call, ApiError, J } from '../api.ts';
+import { h, mount, message, nzTime } from '../ui.ts';
 import type { ScreenCtx } from '../main.ts';
 
-// Daily per-person summary and review flags. Staff see their own day; managers see everyone,
-// system health, and can reset staff PINs and manage terminals.
+// Operations at a glance: orders by stage, pick-ups, high alert, returns, testing, and Cin7
+// Repairs/Locked stock. Counts come from portal_ops_dashboard. Cards whose source isn't connected
+// to the portal yet say so instead of showing a number.
+
+type Doc = { document_number: string; reference?: string; party?: string; document_date: string; business_days?: number; stage?: string; is_pickup?: boolean };
+type StockItem = { sku: string; name: string; qty: number; age_days: number | null };
 
 function ago(iso?: string | null) {
   if (!iso) return 'never';
@@ -11,118 +15,117 @@ function ago(iso?: string | null) {
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
 }
 
-function stat(k: string, v: string | number, bad = false) {
-  return h('div', { class: 'stat' + (bad ? ' bad' : '') }, h('div', { class: 'v' }, String(v)), h('div', { class: 'k' }, k));
+function shortDate(d?: string | null) {
+  if (!d) return '—';
+  return new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short', year: d.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' }).format(new Date(d + 'T12:00:00'));
 }
 
-export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
-  const root = h('div', { class: 'stack' });
-  const day = h('input', { type: 'date', value: nzToday(), max: nzToday(), 'aria-label': 'Day' });
-  const body = h('div', { class: 'stack' });
-  const manager = auth.staff?.role === 'manager';
-  day.addEventListener('change', () => load());
+/** Days since a date for "oldest" lines, in NZ calendar days. */
+export function daysSince(d: string, now = new Date()): number {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland' }).format(now);
+  return Math.round((Date.parse(today) - Date.parse(d)) / 86400000);
+}
 
-  async function load() {
-    mount(body, h('p', { class: 'muted' }, 'Loading…'));
-    try {
-      const r = await call('dashboard.summary', { day: day.value });
-      render(r);
-    } catch (err) { mount(body, message('error', err instanceof ApiError ? err.message : 'Dashboard unavailable.')); }
+type CardOpts = {
+  title: string; count?: number | null; unit?: string; note: string; tone?: 'alert' | 'muted';
+  status?: string; drill?: () => HTMLElement; drillLabel?: string;
+};
+
+export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
+  const root = h('div', { class: 'stack ops' });
+  const body = h('div', { class: 'stack' });
+  const stamp = h('span', { class: 'muted small' });
+  const refreshBtn = h('button', { type: 'button', class: 'btn btn-sm', onclick: () => load() }, 'Refresh');
+
+  function card(o: CardOpts) {
+    const detail = h('div', { class: 'ops-drill', hidden: true });
+    const big = o.count === undefined || o.count === null
+      ? h('div', { class: 'ops-count none' }, h('span', { class: 'dash' }, '—'), h('span', { class: 'muted small' }, o.status || 'Not connected'))
+      : h('div', { class: 'ops-count' + (o.tone === 'alert' && o.count > 0 ? ' alert' : '') }, h('span', { class: 'n' }, String(o.count)), o.unit ? h('span', { class: 'muted small' }, o.unit) : null);
+    const foot = o.drill
+      ? h('button', { type: 'button', class: 'ops-foot', 'aria-expanded': 'false', onclick: (e: Event) => {
+          const btn = e.currentTarget as HTMLButtonElement;
+          const open = detail.hidden;
+          if (open && !detail.childElementCount) detail.append(o.drill!());
+          detail.hidden = !open;
+          btn.closest('.ops-card')!.classList.toggle('open', open);
+          btn.setAttribute('aria-expanded', String(open));
+          btn.querySelector('.arrow')!.textContent = open ? '↑' : '→';
+        } }, h('span', {}, o.drillLabel || 'Open queue'), h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→'))
+      : null;
+    return h('article', { class: 'ops-card' + (o.tone === 'muted' ? ' muted-card' : '') },
+      h('h3', {}, o.title), big, h('p', { class: 'muted small ops-note' }, o.note), foot, detail);
+  }
+
+  function docTable(rows: Doc[], extra?: (d: Doc) => string) {
+    if (!rows.length) return h('p', { class: 'muted small' }, 'Nothing in this queue.');
+    return h('table', { class: 'ops-table' }, h('tbody', {}, rows.map(d => h('tr', {},
+      h('td', { class: 'mono' }, d.document_number),
+      h('td', {}, d.party || '', d.reference && !/^Summary only/.test(d.reference) ? h('div', { class: 'muted small' }, d.reference) : null),
+      h('td', { class: 'num' }, shortDate(d.document_date), extra ? h('div', { class: 'muted small' }, extra(d)) : null)))));
+  }
+
+  function stockTable(items: StockItem[]) {
+    if (!items.length) return h('p', { class: 'muted small' }, 'No devices here.');
+    return h('table', { class: 'ops-table' }, h('tbody', {}, items.map(i => h('tr', {},
+      h('td', {}, i.name, h('div', { class: 'muted small mono' }, i.sku)),
+      h('td', { class: 'num' }, `${i.qty}`), h('td', { class: 'num' }, i.age_days === null ? '—' : `${Math.round(Number(i.age_days))} d`)))));
+  }
+
+  function section(title: string, aside: string, ...cards: HTMLElement[]) {
+    return h('section', { class: 'stack' },
+      h('div', { class: 'row between' }, h('h2', {}, title), h('span', { class: 'muted small' }, aside)),
+      h('div', { class: 'ops-grid' }, cards));
   }
 
   function render(r: J) {
-    const people: J[] = r.people || [];
-    const flagged = people.filter(p => p.flags?.length);
-    const g = r.health?.grading;
-    const workerStale = g?.workerAt && Date.now() - Date.parse(g.workerAt) > 15 * 60000;
+    const o = r.orders, lists = o.lists, st = r.stock || {}, rep = st.repairs || { devices: 0, items: [] }, lock = st.locked || { devices: 0, items: [] };
+    const g = r.grading || {};
+    const oldest = (x: J) => x.oldest ? `Oldest ${shortDate(x.oldest)} (${daysSince(x.oldest)} d)` : 'None waiting';
+    const ageNote = (s: J) => s.averageAgeDays != null ? `Average stock age ${s.averageAgeDays} d · oldest ${s.oldestAgeDays ?? '—'} d` : 'Stock age not available';
+    stamp.textContent = `Updated ${nzTime(r.generatedAt)}`;
     mount(body,
-      r.health ? h('section', { class: 'stack' }, h('h2', {}, 'Grading sheet sync'),
-        h('div', { class: 'cards' },
-          stat('Waiting to write', g.pending, g.pending > 20),
-          stat('Conflicts to review', g.conflicts, g.conflicts > 0),
-          stat('Linked to existing rows today', g.linkedToday),
-          stat('Sheet worker last ran', ago(g.workerAt), !!workerStale),
-          stat('Sheet last imported', ago(g.importAt)),
-          stat('Signed in now', r.health.sessions.active))) : null,
-      manager ? h('section', { class: 'stack' }, h('h2', {}, `Flags (${flagged.reduce((n, p) => n + p.flags.length, 0)})`),
-        flagged.length ? h('div', { class: 'card' }, h('table', {}, h('tbody', {}, flagged.flatMap(p => p.flags.map((f: J) =>
-          h('tr', {}, h('td', {}, h('strong', {}, p.name)), h('td', {}, h('span', { class: 'chip chip-' + f.severity }, f.severity)), h('td', {}, f.message))))))) : h('p', { class: 'muted' }, 'No flags for this day.')) : null,
-      h('section', { class: 'stack' }, h('h2', {}, manager ? 'People' : 'My day'),
-        people.length ? h('div', { class: 'card table-wrap' }, h('table', {},
-          h('thead', {}, h('tr', {}, ['Name', 'Hours', 'Graded', 'G1/G2/G3', 'Linked', 'Regrades', 'Orders shipped', 'Devices verified', 'Overrides', 'Sales', 'Sales total', 'Sign-ins', 'Idle outs', 'Errors'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
-          h('tbody', {}, people.map(p => {
-            const s = p.summary;
-            return h('tr', {},
-              h('td', {}, h('strong', {}, p.name), p.flags?.length && !manager ? h('div', { class: 'flags' }, p.flags.map((f: J) => h('span', { class: 'chip chip-' + f.severity }, f.message))) : null),
-              h('td', {}, `${nzTime(s.firstAt)}–${nzTime(s.lastAt)}`),
-              h('td', { class: 'num' }, s.grading.devices),
-              h('td', { class: 'num' }, `${s.grading.grades['1']}/${s.grading.grades['2']}/${s.grading.grades['3']}`),
-              h('td', { class: 'num' }, s.grading.linked),
-              h('td', { class: 'num' }, s.grading.regrades),
-              h('td', { class: 'num' }, s.shipping.orders),
-              h('td', { class: 'num' }, s.shipping.devicesVerified),
-              h('td', { class: 'num' }, s.shipping.overrides),
-              h('td', { class: 'num' }, s.sales.completed),
-              h('td', { class: 'num' }, money(Number(s.sales.total))),
-              h('td', { class: 'num' }, s.signIns),
-              h('td', { class: 'num' }, s.idleSignOuts),
-              h('td', { class: 'num' }, s.errors));
-          })))) : h('p', { class: 'muted' }, 'No portal activity on this day.')),
-      manager ? adminSection() : null);
+      section('Orders', 'From order to handover',
+        card({ title: 'New', count: o.new.count, unit: 'orders', note: `Awaiting picking · ${oldest(o.new)}`, drill: () => docTable(lists.new, d => d.is_pickup ? 'Pick-up' : '') }),
+        card({ title: 'Picked', count: o.picked.count, unit: 'orders', note: `Picked · awaiting packing / shipping · ${oldest(o.picked)}`, drill: () => docTable(lists.picked, d => d.is_pickup ? 'Pick-up' : '') }),
+        card({ title: 'Packed · courier', count: o.packed.count, unit: 'orders', note: `Packed, awaiting shipping · ${oldest(o.packed)}`, drill: () => docTable(lists.packed) }),
+        card({ title: 'Awaiting pick-up', count: o.pickup.count, unit: 'orders', note: `Ready email sent, not yet collected · ${oldest(o.pickup)}`, drill: () => docTable(lists.pickup, d => `${daysSince(d.document_date)} d waiting`) }),
+        card({ title: 'High alert', count: o.alert.count, unit: 'orders', tone: 'alert', note: 'Open orders more than 1 business day old, any stage', drillLabel: 'Review overdue orders',
+          drill: () => docTable(lists.alert, d => `${d.business_days} business d · ${(d.stage || '').toLowerCase()}`) })),
+      section('Returns', 'Jotform service requests',
+        card({ title: 'Untriaged requests', count: r.returns.untriaged, unit: `of ${r.returns.total}`, tone: 'muted', note: 'Warranty, change-of-mind and repair requests not yet triaged. Trade-ins excluded. Receipt at GT is not recorded yet.' }),
+        card({ title: 'Received at GT', count: null, status: 'Setup needed', note: 'Receipt and closure are not recorded for returns yet.' })),
+      section('Testing', 'Grading sheet',
+        card({ title: 'Received · not tested', count: null, status: 'Not connected', note: 'Needs the Shipment Check delivery date, which the portal does not read yet.' }),
+        card({ title: 'Graded · not POed', count: null, status: 'Not connected', note: 'Needs the live ASN sheet PO column; the stored PO links are incomplete.' }),
+        card({ title: 'Grading sheet sync', count: g.pending ?? 0, unit: 'waiting to write', tone: g.conflicts > 0 ? 'alert' : undefined,
+          note: `${g.conflicts ?? 0} conflict${g.conflicts === 1 ? '' : 's'} to review · worker ran ${ago(g.workerAt)} · sheet imported ${ago(g.importAt)}` })),
+      section('Repairs & unlocking', 'Cin7 stock',
+        card({ title: 'Repairs · Cin7', count: rep.devices, unit: 'devices', note: ageNote(rep), drill: () => stockTable(rep.items) }),
+        card({ title: 'Locked · Cin7', count: lock.devices, unit: 'devices', note: ageNote(lock), drill: () => stockTable(lock.items) }),
+        card({ title: 'Repairs · not POed', count: null, status: 'Not connected', note: 'ASN sheet counts are not available to the portal yet.' }),
+        card({ title: 'Locked · not POed', count: null, status: 'Not connected', note: 'ASN sheet counts are not available to the portal yet.' })),
+      h('details', { class: 'ops-defs' },
+        h('summary', {}, 'Count definitions & data freshness'),
+        h('p', { class: 'small muted' }, 'Orders count once per open Cin7 sale, excluding quotes, drafts, voided, cancelled and completed sales. New = not picked. Picked = picked, not yet packed. Packed · courier = packed, not shipped, not a pick-up. Awaiting pick-up = ready notification recorded in the portal, not yet collected.'),
+        h('p', { class: 'small muted' }, 'High alert uses the order date as day zero and counts Monday–Friday after it; more than 1 business day is overdue (a Friday order is overdue on Tuesday). It includes every open order, including shipped orders still awaiting invoice. NZ public holidays are not excluded yet.'),
+        h('p', { class: 'small muted' }, 'Repairs and Locked count devices (phones, watches, tablets, laptops) on hand in the Cin7 Repairs and Locked Devices locations. Age is quantity-weighted stock age from purchase receipts, not time spent in the location.'),
+        h('p', { class: 'small muted' }, `Sales sync ${ago(r.freshness.orders)} · Stock sync ${ago(r.freshness.stock)} · Latest grading change ${ago(r.freshness.grading)} · Returns sync ${ago(r.freshness.returns)}`)));
   }
 
-  function adminSection() {
-    const box = h('section', { class: 'stack' }, h('h2', {}, 'Staff & terminals'), h('p', { class: 'muted' }, 'Loading…'));
-    const slot = h('div', { class: 'status-slot' });
-
-    async function run(action: string, args: J, title: string, button?: HTMLButtonElement) {
-      slot.replaceChildren();
-      const pin = await askPin(title);
-      if (!pin) return;
-      await busy(button || null, async () => {
-        try { await call(`admin.${action}`, { ...args, pin }); slot.replaceChildren(message('ok', 'Done.')); await loadAdmin(); }
-        catch (err) { slot.replaceChildren(message('error', (err as Error).message)); }
-      });
-    }
-
-    async function loadAdmin() {
-      try {
-        const [s, t] = await Promise.all([call('admin.staff'), call('admin.terminals')]);
-        const addName = h('input', { type: 'text', placeholder: 'New staff name', maxLength: 60 });
-        const addBtn = h('button', { type: 'button', class: 'btn' }, 'Add staff');
-        addBtn.onclick = () => addName.value.trim() && run('add_staff', { name: addName.value.trim() }, `Add ${addName.value.trim()}`, addBtn);
-        const btn = (label: string, action: string, st: J, title: string, cls = 'btn btn-sm') => {
-          const b = h('button', { type: 'button', class: cls }, label);
-          b.onclick = () => run(action, { staffId: st.id }, title, b);
-          return b;
-        };
-        mount(box, h('h2', {}, 'Staff & terminals'), slot,
-          h('div', { class: 'card table-wrap' }, h('table', {},
-            h('thead', {}, h('tr', {}, ['Name', 'Role', 'PIN', 'Actions'].map(x => h('th', {}, x)))),
-            h('tbody', {}, s.staff.map((st: J) => h('tr', {},
-              h('td', {}, h('strong', {}, st.name), st.formerNames?.length ? h('div', { class: 'muted small' }, 'formerly ' + st.formerNames.join(', ')) : null, !st.active ? h('span', { class: 'chip chip-error' }, 'inactive') : null),
-              h('td', {}, st.role),
-              h('td', {}, st.locked ? h('span', { class: 'chip chip-error' }, 'Locked') : st.hasPin ? 'Set' : h('span', { class: 'muted' }, 'Not set')),
-              h('td', {}, h('div', { class: 'row wrap' },
-                st.locked ? btn('Unlock', 'unlock', st, `Unlock ${st.name}`) : null,
-                st.hasPin ? btn('Reset PIN', 'reset_pin', st, `Reset ${st.name}'s PIN`) : null,
-                st.active ? btn('Deactivate', 'deactivate', st, `Deactivate ${st.name}`, 'btn btn-sm btn-ghost') : btn('Activate', 'activate', st, `Activate ${st.name}`)))))))),
-          h('div', { class: 'row' }, addName, addBtn),
-          h('div', { class: 'card table-wrap' }, h('table', {},
-            h('thead', {}, h('tr', {}, ['Terminal', 'Enrolled', 'Last used', ''].map(x => h('th', {}, x)))),
-            h('tbody', {}, t.terminals.map((x: J) => {
-              const b = h('button', { type: 'button', class: 'btn btn-sm btn-ghost' }, 'Revoke');
-              b.onclick = () => run('revoke_terminal', { terminalId: x.id }, `Revoke terminal ${x.name}`, b);
-              return h('tr', {}, h('td', {}, x.name, x.revoked_at ? h('span', { class: 'chip chip-error' }, ' revoked') : null),
-                h('td', {}, new Date(x.created_at).toLocaleDateString('en-NZ')), h('td', {}, ago(x.last_seen_at)), h('td', {}, x.revoked_at ? null : b));
-            })))));
-      } catch (err) { mount(box, h('h2', {}, 'Staff & terminals'), message('error', (err as Error).message)); }
-    }
-    loadAdmin();
-    return box;
+  async function load() {
+    refreshBtn.disabled = true;
+    if (!body.childElementCount) mount(body, h('p', { class: 'muted' }, 'Loading…'));
+    try { render(await call('dashboard.ops')); }
+    catch (err) { mount(body, message('error', err instanceof ApiError ? err.message : 'Operations data could not be loaded. Try Refresh.')); }
+    finally { refreshBtn.disabled = false; }
   }
 
-  mount(root, h('section', { class: 'card row between wrap' }, h('h1', {}, 'Dashboard'), h('div', { class: 'row' }, day, h('button', { type: 'button', class: 'btn', onclick: () => load() }, 'Refresh'))), body);
+  mount(root,
+    h('section', { class: 'ops-head row between wrap' },
+      h('div', {}, h('div', { class: 'eyebrow' }, 'GoodTech operations'), h('h1', { class: 'ops-title' }, 'At a glance.'), h('p', { class: 'muted' }, 'The next action, in one place.')),
+      h('div', { class: 'row' }, stamp, refreshBtn)),
+    body);
   load();
   return root;
 }

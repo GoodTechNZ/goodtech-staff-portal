@@ -8,6 +8,7 @@ import { gradingScreen } from './screens/grading.ts';
 import { shippingScreen } from './screens/shipping.ts';
 import { salesScreen } from './screens/sales.ts';
 import { dashboardScreen } from './screens/dashboard.ts';
+import { adminScreen } from './screens/admin.ts';
 
 export type ScreenCtx = {
   /** Called after a completed device/order: the server has already ended the session. */
@@ -15,16 +16,17 @@ export type ScreenCtx = {
 };
 
 const TABS = [
+  { id: 'dashboard', label: 'Dashboard', screen: dashboardScreen },
   { id: 'grading', label: 'Grading', screen: gradingScreen },
   { id: 'shipping', label: 'Shipping', screen: shippingScreen },
   { id: 'sales', label: 'Sales', screen: salesScreen },
-  { id: 'dashboard', label: 'Dashboard', screen: dashboardScreen },
+  { id: 'admin', label: 'Admin', screen: adminScreen },
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
 const root = document.getElementById('app')!;
 const TAB_KEY = 'gt.portal.tab';
-let tab: TabId = (() => { try { return (localStorage.getItem(TAB_KEY) as TabId) || 'grading'; } catch { return 'grading'; } })();
+let tab: TabId = (() => { try { const t = localStorage.getItem(TAB_KEY); return TABS.some(x => x.id === t) ? t as TabId : 'grading'; } catch { return 'grading'; } })();
 let idle: IdleTimer | null = null;
 let ticker: number | undefined;
 

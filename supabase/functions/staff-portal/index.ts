@@ -171,6 +171,7 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
     ]);
     return { day, manager, people, health };
   }
+  if (action === 'ops') return await rpc('portal_ops_dashboard');
   throw new HttpError(400, 'Unknown dashboard action.');
 }
 
