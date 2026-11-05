@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { IdleTimer, IDLE_MS } from '../src/idle.ts';
 
 describe('IdleTimer', () => {
-  it('expires after 10 minutes without activity and warns in the last minute', () => {
+  it('expires after 5 minutes without activity and warns in the last minute', () => {
     let t = 0;
     const timer = new IdleTimer(() => t);
     t = IDLE_MS - 61_000;

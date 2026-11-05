@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  gradingRecord, needsPin, completesWork, bridgeBody, discountedLines, nzDate, validSerial, GRADING_TESTS, HttpError,
+  gradingRecord, needsPin, bridgeBody, discountedLines, nzDate, validSerial, GRADING_TESTS, HttpError,
 } from '../supabase/functions/staff-portal/logic.ts';
 
 const allPass = Object.fromEntries(GRADING_TESTS.map(t => [t, 'Pass']));
@@ -40,20 +40,6 @@ describe('needsPin', () => {
     expect(needsPin('sales', 'create', {})).toBe(false);
     expect(needsPin('admin', 'staff', {})).toBe(false);
     expect(needsPin('admin', 'reset_pin', {})).toBe(true);
-  });
-});
-
-describe('completesWork', () => {
-  it('signs out after each completed device or order', () => {
-    expect(completesWork('grading', 'save', { ok: true })).toBe(true);
-    expect(completesWork('grading', 'link', { ok: true })).toBe(true);
-    expect(completesWork('grading', 'lookup', { ok: true })).toBe(false);
-    expect(completesWork('shipping', 'ship', { ok: true })).toBe(true);
-    expect(completesWork('shipping', 'collect', { ok: true })).toBe(true);
-    expect(completesWork('shipping', 'scan', { ok: true })).toBe(false);
-    expect(completesWork('sales', 'ship', { order: { stage: 'shipped' } })).toBe(true);
-    expect(completesWork('sales', 'ship', { order: { stage: 'invoiced' }, error: 'Cin7 failed' })).toBe(false);
-    expect(completesWork('sales', 'invoice', { order: { stage: 'invoiced' } })).toBe(false);
   });
 });
 

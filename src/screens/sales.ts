@@ -120,7 +120,7 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
         await busy(b, async () => {
           try {
             const r = await call(`sales.${action}`, { id: o.id, pin });
-            if (r.signedOut) {
+            if (action === 'ship' && !r.error && r.order?.stage === 'shipped') {
               await ctx.completed('Sale complete', [`${r.order.number} · ${r.order.customer?.name || ''}`, `${money(r.order.total)} — handed over and recorded in Cin7.`]);
               return;
             }

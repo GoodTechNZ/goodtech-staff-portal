@@ -30,10 +30,7 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
   - Sales: confirming payment received, or voiding an order.
   - Every staff/terminal admin action.
 - **Lockout.** 5 wrong PINs lock the person for 15 minutes; a manager can unlock them.
-- **Sign-out** happens:
-  - after 10 minutes idle (enforced in the browser and on the server, and swept every 5 minutes by `portal-expire-sessions`);
-  - after each completed device (grading save or link);
-  - after each completed order (ship, pickup ready or collected, sale handed over).
+- **Sign-out** happens only when someone taps Sign out, or after 5 minutes without activity. The idle limit is enforced in the browser and on the server, and `portal-expire-sessions` sweeps abandoned sessions every 5 minutes. Finishing a device or order shows a confirmation and resets the screen for the next one; it doesn't sign anyone out.
 
 ## Grading
 

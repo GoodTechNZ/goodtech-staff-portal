@@ -136,7 +136,7 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
           }
           const lines = [`${d.model} · ${d.serial}`, `Grade ${f.grade}${f.destination && !r.linked ? ' → ' + f.destination : ''}`];
           if (r.linked) lines.push(`Already in the Grading sheet${r.linkedRow ? ' at row ' + r.linkedRow : ''}${r.linkedTester ? ' (' + r.linkedTester + ')' : ''}. Linked, nothing duplicated.`);
-          else lines.push('Queued for the Grading tab in ASNs DB.');
+          else lines.push('Queued for the Grading tab in ASNs DB — usually there within 1–3 minutes.');
           await ctx.completed(r.linked ? 'Linked to existing row' : act === 'update' ? 'Record updated' : 'Device graded', lines);
         } catch (err) {
           formStatus.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Save failed. Try again.'));

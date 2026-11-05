@@ -1,8 +1,8 @@
-// Idle sign-out: 10 minutes without a tap, key press or scan ends the session. The server
+// Idle sign-out: 5 minutes without a tap, key press or scan ends the session. The server
 // applies the same limit; activity is reported to it at most once a minute so a long form
 // does not expire server-side while someone is working on it.
 
-export const IDLE_MS = 10 * 60 * 1000;
+export const IDLE_MS = 5 * 60 * 1000;
 export const WARN_MS = 60 * 1000;
 export const TOUCH_EVERY_MS = 60 * 1000;
 

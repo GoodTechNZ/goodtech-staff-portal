@@ -1,7 +1,7 @@
 import './styles.css';
 import { auth, call, onSignedOut, onTerminalLost, lastServerContact } from './api.ts';
 import { IdleTimer } from './idle.ts';
-import { h, mount, doneSplash } from './ui.ts';
+import { h, mount, doneToast } from './ui.ts';
 import { setupScreen } from './screens/setup.ts';
 import { signInScreen } from './screens/signin.ts';
 import { gradingScreen } from './screens/grading.ts';
@@ -11,7 +11,7 @@ import { dashboardScreen } from './screens/dashboard.ts';
 import { adminScreen } from './screens/admin.ts';
 
 export type ScreenCtx = {
-  /** Called after a completed device/order: the server has already ended the session. */
+  /** Called after a completed device/order: show a confirmation and reset the screen for the next one. */
   completed: (title: string, lines: string[]) => Promise<void>;
 };
 
@@ -64,15 +64,13 @@ function setTab(id: TabId) {
 
 async function signOut(reason: 'manual' | 'idle') {
   try { if (auth.sessionToken) await call('auth.signout', { reason }); } catch { /* already signed out */ }
-  showSignIn(reason === 'idle' ? 'Signed out after 10 minutes without activity.' : undefined);
+  showSignIn(reason === 'idle' ? 'Signed out after 5 minutes without activity.' : undefined);
 }
 
 const ctx: ScreenCtx = {
   async completed(title, lines) {
-    stopIdle();
-    auth.setSession('', null);
-    await doneSplash(title, lines);
-    showSignIn();
+    doneToast(title, lines);
+    showApp();
   },
 };
 
@@ -100,7 +98,7 @@ for (const ev of ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart']) {
   window.addEventListener(ev, () => idle?.activity(), { passive: true, capture: true });
 }
 
-onSignedOut(reason => showSignIn(reason === 'idle' ? 'Signed out after 10 minutes without activity.' : 'Signed out. Choose your name to continue.'));
+onSignedOut(reason => showSignIn(reason === 'idle' ? 'Signed out after 5 minutes without activity.' : 'Signed out. Choose your name to continue.'));
 onTerminalLost(() => showSetup());
 
 auth.terminal ? showSignIn() : showSetup();

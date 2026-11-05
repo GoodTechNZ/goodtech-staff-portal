@@ -130,17 +130,15 @@ export function confirmDialog(title: string, detail: string, confirmLabel = 'Con
   });
 }
 
-/** Full-screen confirmation shown after a completed device/order, before returning to sign in. */
-export function doneSplash(title: string, lines: string[], ms = 2600): Promise<void> {
-  return new Promise(resolve => {
-    const overlay = h('div', { class: 'overlay done', role: 'status' },
-      h('div', { class: 'dialog done-card' }, h('div', { class: 'done-tick', 'aria-hidden': 'true' }, '✓'), h('h2', {}, title),
-        lines.map(l => h('p', {}, l)), h('p', { class: 'muted' }, 'Signed out. Choose your name for the next one.')));
-    document.body.appendChild(overlay);
-    const finish = () => { overlay.remove(); resolve(); };
-    overlay.addEventListener('click', finish);
-    setTimeout(finish, ms);
-  });
+/** Confirmation banner after a completed device or order. Stays signed in; fades after a few seconds. */
+export function doneToast(title: string, lines: string[], ms = 4500) {
+  document.querySelector('.toast')?.remove();
+  const el = h('div', { class: 'toast', role: 'status' },
+    h('span', { class: 'done-tick', 'aria-hidden': 'true' }, '✓'),
+    h('div', {}, h('strong', {}, title), lines.filter(Boolean).map(l => h('div', { class: 'small' }, l))),
+    h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'aria-label': 'Dismiss', onclick: () => el.remove() }, '×'));
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), ms);
 }
 
 export function busy<T>(button: HTMLButtonElement | null, run: () => Promise<T>): Promise<T> {

@@ -1,10 +1,10 @@
 // Staff portal gateway. Every portal request comes here: it checks the enrolled terminal and the
 // signed-in staff session, asks for the PIN again on sensitive actions, logs the action for the
-// daily summaries, and signs the person out after each completed device or order.
+// daily summaries. Sessions end only on sign-out or after 5 minutes without activity.
 // Grading runs on the portal_grading_* RPCs; Shipping and Sales are forwarded to the existing
 // staff-shipping and staff-sales-desk functions with the signed-in staff name.
 import {
-  HttpError, J, nzDate, validSerial, gradingRecord, uuidOrNull, needsPin, completesWork, bridgeBody,
+  HttpError, J, nzDate, validSerial, gradingRecord, uuidOrNull, needsPin, bridgeBody,
   discountedLines, shippingRef, SHIPPING_ACTIONS, SALES_ACTIONS,
 } from './logic.ts';
 
@@ -246,7 +246,7 @@ async function handle(req: Request): Promise<J> {
   }
 
   const s = await rpc('portal_session', { p_terminal_token: terminalToken, p_session_token: req.headers.get('x-session-token') || '' });
-  if (s.signedOut) throw new HttpError(401, 'Signed out after 10 minutes without activity.', { signedOut: true, reason: s.reason });
+  if (s.signedOut) throw new HttpError(401, 'Signed out after 5 minutes without activity.', { signedOut: true, reason: s.reason });
   const ctx: Ctx = { sessionId: s.sessionId, terminalId: s.terminalId, staff: s.staff };
 
   if (module === 'auth' && action === 'touch') return { ok: true, staff: ctx.staff };
@@ -261,12 +261,7 @@ async function handle(req: Request): Promise<J> {
     try { await requirePin(ctx, b.pin, module + '.' + action); }
     catch (e) { await log(ctx, module, action, null, 'denied', { reason: 'pin' }); throw e; }
   }
-  const result = await run(ctx, action, b);
-  if (completesWork(module, action, result)) {
-    await signOut(ctx, 'completed');
-    return { ...result, signedOut: true };
-  }
-  return result;
+  return await run(ctx, action, b);
 }
 
 Deno.serve(async req => {
