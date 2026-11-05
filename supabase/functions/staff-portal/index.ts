@@ -21,7 +21,7 @@ function cors(req: Request): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': allow,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'content-type, x-terminal-token, x-session-token',
+    'Access-Control-Allow-Headers': 'content-type, x-terminal-token, x-session-token, x-sync-token',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
@@ -43,6 +43,10 @@ async function rest(path: string, init: RequestInit = {}) {
   return data;
 }
 const rpc = (fn: string, args: J = {}) => rest('rpc/' + fn, { method: 'POST', body: JSON.stringify(args) });
+
+async function sha256(v: string) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)))).map(x => x.toString(16).padStart(2, '0')).join('');
+}
 
 async function log(ctx: Ctx, module: string, action: string, ref: string | null, outcome: 'ok' | 'linked' | 'error' | 'denied', details: J = {}) {
   try {
@@ -171,7 +175,10 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
     ]);
     return { day, manager, people, health };
   }
-  if (action === 'ops') return await rpc('portal_ops_dashboard');
+  if (action === 'ops') {
+    const [ops, asn] = await Promise.all([rpc('portal_ops_dashboard'), rpc('asn_ops_summary')]);
+    return { ...ops, asn };
+  }
   throw new HttpError(400, 'Unknown dashboard action.');
 }
 
@@ -229,11 +236,19 @@ const MODULES: Record<string, (ctx: Ctx, action: string, b: J) => Promise<J>> = 
 
 async function handle(req: Request): Promise<J> {
   const raw = await req.text();
-  if (raw.length > 64000) throw new HttpError(413, 'Request too large.');
+  const syncToken = req.headers.get('x-sync-token') || '';
+  if (raw.length > (syncToken ? 4000000 : 64000)) throw new HttpError(413, 'Request too large.');
   let b: J;
   try { b = JSON.parse(raw || '{}'); } catch { throw new HttpError(400, 'Invalid request.'); }
   const [module, action] = String(b.action || '').split('.');
   const terminalToken = req.headers.get('x-terminal-token') || '';
+
+  // ASNs DB snapshot from apps-script/AsnOpsSync.gs (no staff session; its own token).
+  if (module === 'sync' && action === 'asn') {
+    const [cfg] = await rest('portal_config?select=value&key=eq.asn_sync_token_sha256');
+    if (!cfg || !syncToken || (await sha256(syncToken)) !== cfg.value) throw new HttpError(401, 'Invalid sync token.');
+    return await rpc('asn_ops_ingest', { p: { rowsTotal: b.rowsTotal, rows: b.rows, shipments: b.shipments } });
+  }
 
   if (module === 'terminal' && action === 'enrol') return await rpc('portal_terminal_enrol', { p_code: String(b.code || '').trim().toUpperCase(), p_name: String(b.name || '') });
   if (module === 'auth' && action === 'staff') return { staff: await rpc('portal_staff_list', { p_terminal_token: terminalToken }) };

@@ -8,6 +8,8 @@ import type { ScreenCtx } from '../main.ts';
 
 type Doc = { document_number: string; reference?: string; party?: string; document_date: string; business_days?: number; stage?: string; is_pickup?: boolean };
 type StockItem = { sku: string; name: string; qty: number; age_days: number | null };
+type AsnDevice = { serial: string; order_number: string; grade: string; location: string; status: string };
+type AsnOrder = { order_number: string; shipment: string; delivered: string; devices: number };
 
 function ago(iso?: string | null) {
   if (!iso) return 'never';
@@ -72,6 +74,21 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
       h('td', { class: 'num' }, `${i.qty}`), h('td', { class: 'num' }, i.age_days === null ? '—' : `${Math.round(Number(i.age_days))} d`)))));
   }
 
+  function asnOrderTable(rows: AsnOrder[]) {
+    if (!rows.length) return h('p', { class: 'muted small' }, 'Nothing waiting.');
+    return h('table', { class: 'ops-table' }, h('tbody', {}, rows.map(o => h('tr', {},
+      h('td', { class: 'mono' }, o.order_number, h('div', { class: 'muted small' }, `Shipment ${o.shipment}`)),
+      h('td', {}, `Delivered ${o.delivered}`), h('td', { class: 'num' }, `${o.devices} device${o.devices === 1 ? '' : 's'}`)))));
+  }
+
+  function asnDeviceTable(rows: AsnDevice[]) {
+    if (!rows.length) return h('p', { class: 'muted small' }, 'Nothing waiting.');
+    return h('table', { class: 'ops-table' }, h('tbody', {}, rows.map(d => h('tr', {},
+      h('td', { class: 'mono' }, d.serial, h('div', { class: 'muted small' }, `Order ${d.order_number}`)),
+      h('td', {}, `Grade ${d.grade}`, d.location ? h('div', { class: 'muted small' }, d.location) : null),
+      h('td', {}, d.status || h('span', { class: 'muted' }, '—'))))));
+  }
+
   function section(title: string, aside: string, ...cards: HTMLElement[]) {
     return h('section', { class: 'stack' },
       h('div', { class: 'row between' }, h('h2', {}, title), h('span', { class: 'muted small' }, aside)),
@@ -81,6 +98,11 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
   function render(r: J) {
     const o = r.orders, lists = o.lists, st = r.stock || {}, rep = st.repairs || { devices: 0, items: [] }, lock = st.locked || { devices: 0, items: [] };
     const g = r.grading || {};
+    // ASNs DB snapshot (apps-script/AsnOpsSync.gs). Cards say "Not connected" until the first sync,
+    // and flag the source as stale if the sheet hasn't synced for 30 minutes.
+    const asn = r.asn && r.asn.syncedAt ? r.asn : null;
+    const asnStale = asn && Date.now() - Date.parse(asn.syncedAt) > 30 * 60000;
+    const asnNote = (text: string) => asn ? `${text} · ASNs DB read ${ago(asn.syncedAt)}${asnStale ? ' (stale)' : ''}` : 'Waiting for the ASNs DB sync script to run.';
     const oldest = (x: J) => x.oldest ? `Oldest ${shortDate(x.oldest)} (${daysSince(x.oldest)} d)` : 'None waiting';
     const ageNote = (s: J) => s.averageAgeDays != null ? `Average stock age ${s.averageAgeDays} d · oldest ${s.oldestAgeDays ?? '—'} d` : 'Stock age not available';
     stamp.textContent = `Updated ${nzTime(r.generatedAt)}`;
@@ -95,21 +117,26 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
       section('Returns', 'Jotform service requests',
         card({ title: 'Untriaged requests', count: r.returns.untriaged, unit: `of ${r.returns.total}`, tone: 'muted', note: 'Warranty, change-of-mind and repair requests not yet triaged. Trade-ins excluded. Receipt at GT is not recorded yet.' }),
         card({ title: 'Received at GT', count: null, status: 'Setup needed', note: 'Receipt and closure are not recorded for returns yet.' })),
-      section('Testing', 'Grading sheet',
-        card({ title: 'Received · not tested', count: null, status: 'Not connected', note: 'Needs the Shipment Check delivery date, which the portal does not read yet.' }),
-        card({ title: 'Graded · not POed', count: null, status: 'Not connected', note: 'Needs the live ASN sheet PO column; the stored PO links are incomplete.' }),
+      section('Testing', 'ASNs DB',
+        card({ title: 'Received · not tested', count: asn ? asn.untested : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
+          note: asnNote('Delivered in Shipment Check, no grade yet'), drillLabel: 'Review received devices', drill: asn ? () => asnOrderTable(asn.lists.untested) : undefined }),
+        card({ title: 'Graded · not POed', count: asn ? asn.gradedNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
+          note: asnNote(asn ? `${asn.readyForPo} ready for PO · ${asn.repairsNoPo} repairs · ${asn.lockedNoPo} locked` : ''), drillLabel: 'Review ready for PO', drill: asn ? () => asnDeviceTable(asn.lists.ready) : undefined }),
         card({ title: 'Grading sheet sync', count: g.pending ?? 0, unit: 'waiting to write', tone: g.conflicts > 0 ? 'alert' : undefined,
           note: `${g.conflicts ?? 0} conflict${g.conflicts === 1 ? '' : 's'} to review · worker ran ${ago(g.workerAt)} · sheet imported ${ago(g.importAt)}` })),
-      section('Repairs & unlocking', 'Cin7 stock',
+      section('Repairs & unlocking', 'Cin7 stock & ASNs DB',
         card({ title: 'Repairs · Cin7', count: rep.devices, unit: 'devices', note: ageNote(rep), drill: () => stockTable(rep.items) }),
         card({ title: 'Locked · Cin7', count: lock.devices, unit: 'devices', note: ageNote(lock), drill: () => stockTable(lock.items) }),
-        card({ title: 'Repairs · not POed', count: null, status: 'Not connected', note: 'ASN sheet counts are not available to the portal yet.' }),
-        card({ title: 'Locked · not POed', count: null, status: 'Not connected', note: 'ASN sheet counts are not available to the portal yet.' })),
+        card({ title: 'Repairs · not POed', count: asn ? asn.repairsNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
+          note: asnNote('Graded with a fault note, no PO in ASNs'), drillLabel: 'Review ASN repairs', drill: asn ? () => asnDeviceTable(asn.lists.repairs) : undefined }),
+        card({ title: 'Locked · not POed', count: asn ? asn.lockedNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
+          note: asnNote('Lock / MDM / RML status or location, no PO in ASNs'), drillLabel: 'Review ASN locked devices', drill: asn ? () => asnDeviceTable(asn.lists.locked) : undefined })),
       h('details', { class: 'ops-defs' },
         h('summary', {}, 'Count definitions & data freshness'),
         h('p', { class: 'small muted' }, 'Orders count once per open Cin7 sale, excluding quotes, drafts, voided, cancelled and completed sales. New = not picked. Picked = picked, not yet packed. Packed · courier = packed, not shipped, not a pick-up. Awaiting pick-up = ready notification recorded in the portal, not yet collected.'),
         h('p', { class: 'small muted' }, 'High alert uses the order date as day zero and counts Monday–Friday after it; more than 1 business day is overdue (a Friday order is overdue on Tuesday). It includes every open order, including shipped orders still awaiting invoice. NZ public holidays are not excluded yet.'),
         h('p', { class: 'small muted' }, 'Repairs and Locked count devices (phones, watches, tablets, laptops) on hand in the Cin7 Repairs and Locked Devices locations. Age is quantity-weighted stock age from purchase receipts, not time spent in the location.'),
+        h('p', { class: 'small muted' }, 'Testing and "not POed" come from ASNs DB, read every 10 minutes. Received · not tested: no grade (column AA) on an order whose Shipment Check row has a Delivered date (column AL). Not POed: column AG blank and graded; Locked if status or location mentions lock, MDM or RML, Repairs for any other fault note or a Repairs location, otherwise ready for PO. Each serial counts once.'),
         h('p', { class: 'small muted' }, `Sales sync ${ago(r.freshness.orders)} · Stock sync ${ago(r.freshness.stock)} · Latest grading change ${ago(r.freshness.grading)} · Returns sync ${ago(r.freshness.returns)}`)));
   }
 

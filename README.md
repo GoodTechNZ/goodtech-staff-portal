@@ -13,6 +13,7 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
    ├─ Shipping → existing staff-shipping function (Cin7, eShip, Shopify)
    ├─ Sales    → existing staff-sales-desk function (Cin7)
    ├─ Dashboard→ portal_ops_dashboard (orders, pick-ups, high alert, returns, Cin7 Repairs/Locked)
+   │             + asn_ops_summary (received not tested, graded / repairs / locked not POed)
    └─ Admin    → portal_daily_summary / portal_health, staff PINs and terminals
 ```
 
@@ -112,3 +113,11 @@ update portal_config set value = extensions.crypt('NEW-CODE-HERE', extensions.ge
 ## Known limits
 
 - `staff-sales-desk` checks the staff name against its own hard-coded list (Crystal, David, Fraser, Haobin, Li, Tallula, Teddy, Tim, Tristan, plus old names). Staff added in the portal can't create sales until that list is updated or switched to read the `staff` table.
+
+## ASNs DB sync (Dashboard testing and PO cards)
+
+`apps-script/AsnOpsSync.gs` runs inside ASNs DB every 10 minutes. It reads the sheet and changes nothing. It posts:
+- the ASNs rows whose PO (column AG) is blank;
+- the Shipment Check SO and Delivered columns.
+
+It posts to the gateway's `sync.asn` action, authenticated by the `x-sync-token` header. The token's SHA-256 is stored in `portal_config.asn_sync_token_sha256`. To rotate it, generate a new token, update that hash and the `PORTAL_SYNC_TOKEN` script property.
