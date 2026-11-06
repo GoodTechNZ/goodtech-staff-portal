@@ -10,10 +10,12 @@ type Lookup = {
   needsSelection?: boolean; serial?: string; candidates?: { recordId: string; row: number | null; grade: string; location: string; tester: string; status: string }[];
   device: { serial: string; recordId: string | null; version: string; row: number | null; model: string; supplier?: string; shipment?: string; capacity?: string; colour?: string; listedColour?: string };
   record: J; sync: string;
+  graded?: boolean; canMove?: boolean;
+  sheet?: { row: number; grade: string; colour: string | null; status: string | null; location: string | null; tester: string | null; productCode: string | null } | null;
 };
 
 const SYNC_LABEL: Record<string, string> = {
-  pending: 'Waiting to write to sheet', working: 'Writing to sheet', synced: 'In sheet', conflict: 'Sheet conflict — manager review', linked: 'Linked to existing row',
+  pending: 'Waiting to write to sheet', working: 'Writing to sheet', synced: 'In sheet', conflict: 'Sheet conflict — manager review', linked: 'Linked to existing row', dismissed: 'In sheet',
 };
 
 export function gradingScreen(ctx: ScreenCtx): HTMLElement {
@@ -28,6 +30,7 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
     try {
       const r = await call<Lookup>('grading.lookup', { serial, recordId });
       if (r.needsSelection) chooseRow(r);
+      else if (r.graded) showGraded(r);
       else showForm(r);
     } catch (err) {
       status.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Lookup failed.'));
@@ -44,6 +47,88 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
       h('div', { class: 'list' }, (r.candidates || []).map(c => h('button', { type: 'button', class: 'list-item', onclick: () => lookup(r.serial!, c.recordId) },
         h('strong', {}, c.row ? `Row ${c.row}` : 'Not yet in sheet'), ` · Grade ${c.grade || '—'} · ${c.location || 'no location'} · ${c.tester || 'no tester'}`,
         c.status ? h('div', { class: 'muted small' }, c.status) : null)))));
+  }
+
+  // Graded devices are never graded again. Staff can move them and update the status note; grade,
+  // colour and model changes are product-code changes that move stock in Cin7 (manager process).
+  function showGraded(r: Lookup) {
+    const d = r.device;
+    const rec = r.record || {};
+    const sh = r.sheet;
+    const grade = sh?.grade || String(rec.grade ?? '');
+    const colour = sh?.colour || String(rec.colour ?? '');
+    const tester = sh?.tester || String(rec.tester ?? '');
+    const row = sh?.row ?? d.row;
+    const currentDest: Destination | '' = (DESTINATIONS as readonly string[]).includes(String(rec.destination)) ? rec.destination as Destination
+      : rec.location === 'Cabinet' ? 'Ready For Sale' : (DESTINATIONS as readonly string[]).includes(String(rec.location)) ? rec.location as Destination : '';
+    const initial = { destination: currentDest, status: String(rec.status ?? ''), notes: String(rec.notes ?? '') };
+    const next: { destination: Destination | ''; status: string; notes: string } = { ...initial };
+    const formStatus = h('div', { class: 'status-slot' });
+    let attempt: { key: string; moveId: string } | null = null;
+
+    const facts = [
+      `Grade ${grade || '—'}`, colour && colour, tester && `by ${tester}`, rec.date && `on ${rec.date}`,
+      (sh?.location || rec.location) && `· ${sh?.location || rec.location}`,
+    ].filter(Boolean).join(' ');
+    const head = h('section', { class: 'card device' },
+      h('div', { class: 'device-head' },
+        h('div', {}, h('h2', {}, d.model || 'Device'), h('div', { class: 'mono' }, d.serial),
+          h('div', { class: 'muted small' }, [row ? `Sheet row ${row}` : null, sh?.productCode && sh.productCode !== '-' ? sh.productCode : null].filter(Boolean).join(' · '))),
+        h('span', { class: 'chip chip-synced' }, 'Already graded')),
+      message('info', `${facts}.${(sh?.status || rec.status) ? ' Status: ' + (sh?.status || rec.status) + '.' : ''} It can't be graded again.`));
+
+    const wrongGrade = h('p', { class: 'muted small' }, 'Wrong grade, colour or model? That changes the product code and moves the stock in Cin7, so ask a manager.');
+
+    if (!r.canMove) {
+      mount(work, head, h('section', { class: 'card stack' },
+        message('warn', d.recordId
+          ? 'An earlier change to this device hasn’t reached the sheet yet, or has a conflict. Ask Fraser to clear it (Dashboard → Grading sync), then scan again.'
+          : `Graded in the sheet${row ? ' (row ' + row + ')' : ''}, but the portal hasn’t loaded that row yet. Change its location in the sheet for now.`),
+        wrongGrade,
+        h('div', { class: 'row end' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { mount(work); scan.focus(); } }, 'Done'))));
+      return;
+    }
+
+    const destSeg = segmented<Destination>({ name: 'Location', options: DESTINATIONS, value: next.destination, labels: { 'Ready For Sale': 'Ready For Sale (Cabinet)' }, onChange: v => { next.destination = v; refresh(); } });
+    const statusText = h('textarea', { rows: 2, maxLength: 1000, placeholder: 'e.g. Screen replaced, needs unlocking', oninput: () => { next.status = statusText.value; refresh(); } }, next.status);
+    const notes = h('textarea', { rows: 2, maxLength: 5000, oninput: () => { next.notes = notes.value; refresh(); } }, next.notes);
+    const save = h('button', { type: 'button', class: 'btn btn-primary btn-lg' }, 'Save changes');
+    const hint = h('div', { class: 'muted small' });
+
+    function refresh() {
+      const changed = next.destination !== initial.destination || next.status.trim() !== initial.status.trim() || next.notes !== initial.notes;
+      save.disabled = !changed || !next.destination;
+      save.textContent = next.destination !== initial.destination ? `Move to ${next.destination}` : 'Save changes';
+      hint.textContent = changed ? '' : 'Choose a new location or change the status to save.';
+    }
+
+    save.addEventListener('click', () => busy(save, async () => {
+      formStatus.replaceChildren();
+      const body = { serial: d.serial, recordId: d.recordId, version: d.version, destination: next.destination, status: next.status.trim(), notes: next.notes };
+      const key = JSON.stringify(body);
+      if (attempt?.key !== key) attempt = { key, moveId: uuid() };
+      try {
+        const res = await call<J>('grading.move', { ...body, moveId: attempt.moveId });
+        const moved = res.from !== res.to;
+        await ctx.completed(moved ? 'Device moved' : 'Status updated', [
+          `${d.model} · ${d.serial}`,
+          moved ? `${res.from || 'Unknown'} → ${res.to}` : `Status: ${next.status.trim() || '(cleared)'}`,
+          'Queued for the Grading tab in ASNs DB — usually there within 1–3 minutes.',
+        ]);
+      } catch (err) {
+        formStatus.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Save failed. Try again.'));
+      }
+    }));
+
+    mount(work, head, h('section', { class: 'card stack' },
+      h('h3', {}, 'Move or update status'),
+      h('div', { class: 'field' }, h('span', { class: 'label' }, 'Location'), destSeg),
+      h('label', { class: 'field' }, h('span', { class: 'label' }, 'Device status'), statusText),
+      h('label', { class: 'field' }, h('span', { class: 'label' }, 'Notes'), notes),
+      formStatus, hint,
+      h('div', { class: 'row end wrap' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { mount(work); scan.focus(); } }, 'Cancel'), save),
+      wrongGrade));
+    refresh();
   }
 
   function showForm(r: Lookup) {

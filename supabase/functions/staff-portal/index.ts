@@ -86,8 +86,26 @@ async function bridge(fn: string, payload: J): Promise<{ status: number; data: J
 async function grading(ctx: Ctx, action: string, b: J) {
   if (action === 'lookup') {
     const serial = validSerial(b.serial);
-    const data = await rpc('portal_grading_lookup', { p_serial: serial, p_id: uuidOrNull(b.recordId) });
-    return data;
+    return await rpc('portal_grading_scan', { p_serial: serial, p_id: uuidOrNull(b.recordId) });
+  }
+  if (action === 'move') {
+    // A graded device is never graded again: it can only be moved and have its status note updated.
+    const serial = validSerial(b.serial);
+    const recordId = uuidOrNull(b.recordId);
+    const moveId = uuidOrNull(b.moveId);
+    if (!recordId || !moveId) throw new HttpError(400, 'Invalid request. Scan again.');
+    const destination = String(b.destination ?? '');
+    const status = String(b.status ?? '').trim().slice(0, 1000);
+    const notes = b.notes == null ? null : String(b.notes).slice(0, 5000);
+    const details = { destination, status, recordId, moveId };
+    try {
+      const result = await rpc('portal_grading_move', { p: { serial, recordId, moveId, version: String(b.version ?? ''), destination, status, notes, owner: ctx.staff.id, staff: ctx.staff.name } });
+      await log(ctx, 'grading', 'move', serial, 'ok', { ...details, from: result.from ?? null, to: result.to ?? null });
+      return result;
+    } catch (e) {
+      await log(ctx, 'grading', 'move', serial, 'error', { ...details, error: String((e as Error).message).slice(0, 300) });
+      throw e;
+    }
   }
   if (action === 'save') {
     const serial = validSerial(b.serial);
