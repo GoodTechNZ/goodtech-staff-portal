@@ -71,6 +71,26 @@ export function adminScreen(_ctx: ScreenCtx): HTMLElement {
       manager ? adminSection() : null);
   }
 
+  // One-time enrolment code for a new shared terminal. Only Fraser can create one (the server checks).
+  function enrolCard() {
+    const out = h('div', { class: 'status-slot' });
+    const btn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Create enrolment code');
+    btn.addEventListener('click', async () => {
+      out.replaceChildren();
+      const pin = await askPin('Create an enrolment code', 'The code works once, for 15 minutes, on this Wi-Fi network only.');
+      if (!pin) return;
+      await busy(btn, async () => {
+        try {
+          const r = await call<{ code: string; expiresAt: string }>('admin.enrol_code', { pin });
+          out.replaceChildren(h('div', { class: 'enrol-code' },
+            h('div', { class: 'enrol-code-value mono' }, r.code),
+            h('div', { class: 'muted small' }, `Use it on the new device before ${nzTime(r.expiresAt)}, connected to this same Wi-Fi network. It works once.`)));
+        } catch (err) { out.replaceChildren(message('error', (err as Error).message)); }
+      });
+    });
+    return h('div', { class: 'card stack' }, h('div', { class: 'row between wrap' }, h('strong', {}, 'Enrol a new terminal'), btn), out);
+  }
+
   function adminSection() {
     const box = h('section', { class: 'stack' }, h('h2', {}, 'Staff & terminals'), h('p', { class: 'muted' }, 'Loading…'));
     const slot = h('div', { class: 'status-slot' });
@@ -108,6 +128,7 @@ export function adminScreen(_ctx: ScreenCtx): HTMLElement {
                 st.hasPin ? btn('Reset PIN', 'reset_pin', st, `Reset ${st.name}'s PIN`) : null,
                 st.active ? btn('Deactivate', 'deactivate', st, `Deactivate ${st.name}`, 'btn btn-sm btn-ghost') : btn('Activate', 'activate', st, `Activate ${st.name}`)))))))),
           h('div', { class: 'row' }, addName, addBtn),
+          enrolCard(),
           h('div', { class: 'card table-wrap' }, h('table', {},
             h('thead', {}, h('tr', {}, ['Terminal', 'Enrolled', 'Last used', ''].map(x => h('th', {}, x)))),
             h('tbody', {}, t.terminals.map((x: J) => {

@@ -19,7 +19,7 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
 
 ## Staff sign-in
 
-- **Terminals** are enrolled once with the enrolment code (bcrypt hash in `portal_config`). Managers can revoke a terminal from the Dashboard.
+- **Terminals** are enrolled once with a single-use code that only Fraser can create (Admin → Enrol a new terminal, with PIN). A code expires after 15 minutes and only works from the same network (public IP, i.e. the same Wi-Fi) it was created on. Managers can revoke a terminal from Admin.
 - **Name + PIN.** On an enrolled terminal, staff tap their name, then enter their 4-digit PIN.
   - The names come from the `staff` table: Crystal (formerly Wei), Li (formerly Liwei), David, Fraser (manager), Haobin, Piper, Tallula and Tristan.
   - First use: someone with no PIN yet sets one, entering it twice. Weak PINs like 1234 or 0000 are refused.
@@ -103,12 +103,7 @@ The function does its own terminal and session auth. Secrets:
 - Optional environment variable: `VITE_PORTAL_API`; it defaults to the project's function URL.
 - `public/_headers` sets the CSP and no-index headers.
 
-**Rotate the terminal enrolment code** (existing terminals keep working):
-
-```sql
-update portal_config set value = extensions.crypt('NEW-CODE-HERE', extensions.gen_salt('bf', 10)), updated_at = now()
- where key = 'terminal_enrol_code_hash';
-```
+**Enrolment codes** are created in Admin by Fraser (`staff.can_enrol`). To let someone else create them: `update staff set can_enrol = true where display_name = '…';`
 
 ## Known limits
 

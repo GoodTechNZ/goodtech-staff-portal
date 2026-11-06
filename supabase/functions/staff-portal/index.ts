@@ -44,6 +44,11 @@ async function rest(path: string, init: RequestInit = {}) {
 }
 const rpc = (fn: string, args: J = {}) => rest('rpc/' + fn, { method: 'POST', body: JSON.stringify(args) });
 
+// The device's public network address (shared by everything on the same Wi-Fi).
+function clientIp(req: Request) {
+  return (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('cf-connecting-ip') || req.headers.get('x-real-ip') || '';
+}
+
 async function sha256(v: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)))).map(x => x.toString(16).padStart(2, '0')).join('');
 }
@@ -184,8 +189,10 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
 }
 
 // ---------- Admin (managers) ----------
-async function admin(ctx: Ctx, action: string, b: J) {
+async function admin(ctx: Ctx, action: string, b: J, req: Request) {
   if (ctx.staff.role !== 'manager') throw new HttpError(403, 'Managers only.');
+  // One-time code for enrolling a new terminal; only works on this device's network for 15 minutes.
+  if (action === 'enrol_code') return await rpc('portal_enrol_code_create', { p_staff: ctx.staff.id, p_terminal: ctx.terminalId, p_ip: clientIp(req) });
   if (action === 'staff') {
     const rows = await rest('staff?select=id,display_name,former_names,role,active,pin_set_at,locked_until&order=display_name');
     return { staff: rows.map((s: J) => ({ id: s.id, name: s.display_name, formerNames: s.former_names, role: s.role, active: s.active, hasPin: !!s.pin_set_at, locked: !!s.locked_until && Date.parse(s.locked_until) > Date.now() })) };
@@ -233,7 +240,7 @@ async function admin(ctx: Ctx, action: string, b: J) {
   return { ok: true };
 }
 
-const MODULES: Record<string, (ctx: Ctx, action: string, b: J) => Promise<J>> = { grading, shipping, sales, dashboard, admin };
+const MODULES: Record<string, (ctx: Ctx, action: string, b: J, req: Request) => Promise<J>> = { grading, shipping, sales, dashboard, admin };
 
 async function handle(req: Request): Promise<J> {
   const raw = await req.text();
@@ -251,7 +258,11 @@ async function handle(req: Request): Promise<J> {
     return await rpc('asn_ops_ingest', { p: { rowsTotal: b.rowsTotal, rows: b.rows, shipments: b.shipments } });
   }
 
-  if (module === 'terminal' && action === 'enrol') return await rpc('portal_terminal_enrol', { p_code: String(b.code || '').trim().toUpperCase(), p_name: String(b.name || '') });
+  if (module === 'terminal' && action === 'enrol') {
+    const r = await rpc('portal_terminal_enrol', { p_code: String(b.code || '').trim().toUpperCase(), p_name: String(b.name || ''), p_ip: clientIp(req) });
+    if (!r?.ok) throw new HttpError(403, r?.error || 'Enrolment failed.');
+    return r;
+  }
   if (module === 'auth' && action === 'staff') return { staff: await rpc('portal_staff_list', { p_terminal_token: terminalToken }) };
   if (module === 'auth' && action === 'signin') {
     const staffId = uuidOrNull(b.staffId);
@@ -277,7 +288,7 @@ async function handle(req: Request): Promise<J> {
     try { await requirePin(ctx, b.pin, module + '.' + action); }
     catch (e) { await log(ctx, module, action, null, 'denied', { reason: 'pin' }); throw e; }
   }
-  return await run(ctx, action, b);
+  return await run(ctx, action, b, req);
 }
 
 Deno.serve(async req => {

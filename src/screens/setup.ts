@@ -1,15 +1,16 @@
 import { auth, call, ApiError } from '../api.ts';
 import { h, message, busy } from '../ui.ts';
 
-// One-time terminal enrolment. Needs the enrolment code from a manager.
+// One-time terminal enrolment with a single-use code from Fraser (Admin → Enrol a new terminal).
+// The code only works on the same Wi-Fi network it was created on, for 15 minutes.
 export function setupScreen(onDone: () => void): HTMLElement {
   const status = h('div', { class: 'status-slot' });
   const name = h('input', { type: 'text', placeholder: 'e.g. Grading bench 1', maxLength: 60, required: true, autocomplete: 'off' });
-  const code = h('input', { type: 'text', placeholder: 'XXXX-XXXX-XXXX', required: true, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false });
+  const code = h('input', { type: 'text', placeholder: 'XXXX-XXXX', required: true, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false });
   const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-lg' }, 'Enrol this terminal');
   const form = h('form', { class: 'card narrow stack' },
     h('h1', {}, 'Set up this terminal'),
-    h('p', { class: 'muted' }, 'This is done once per shared computer or tablet. Ask a manager for the enrolment code.'),
+    h('p', { class: 'muted' }, 'Done once per shared computer or tablet. Ask Fraser for an enrolment code, and use it on the shop Wi-Fi within 15 minutes.'),
     h('label', { class: 'field' }, h('span', {}, 'Terminal name'), name),
     h('label', { class: 'field' }, h('span', {}, 'Enrolment code'), code),
     status, submit);
