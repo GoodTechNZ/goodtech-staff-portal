@@ -182,8 +182,8 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
   }
   if (action === 'picklists') return { orders: await rpc('portal_new_order_pick_lists') };
   if (action === 'ops') {
-    const [ops, asn] = await Promise.all([rpc('portal_ops_dashboard'), rpc('asn_ops_summary')]);
-    return { ...ops, asn };
+    const [ops, asn, gradingQueue] = await Promise.all([rpc('portal_ops_dashboard'), rpc('asn_ops_summary'), rpc('portal_grading_queue')]);
+    return { ...ops, asn, gradingQueue };
   }
   throw new HttpError(400, 'Unknown dashboard action.');
 }

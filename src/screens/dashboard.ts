@@ -10,7 +10,10 @@ type Doc = { document_number: string; reference?: string; party?: string; docume
 type StockItem = { sku: string; name: string; qty: number; age_days: number | null };
 type AsnDevice = { serial: string; order_number: string; grade: string; location: string; status: string };
 type PickOrder = { document_number: string; reference: string; party: string; document_date: string; carrier: string; is_pickup: boolean; address: string; note: string | null; lines: { sku: string; name: string; qty: number }[] };
+type SyncItem = { kind: 'inflight' | 'blocked' | 'conflict'; serial: string; model: string | null; tester: string; grade: string; destination: string; createdAt: string; row: number | null; reason: string };
 type AsnOrder = { order_number: string; shipment: string; delivered: string; devices: number };
+
+const GRADING_TAB = 'https://docs.google.com/spreadsheets/d/1opKNiaciUV8-kdWrzID37F41j7DFcxlZSV5RCmi6NZU/edit#gid=1845935179';
 
 function ago(iso?: string | null) {
   if (!iso) return 'never';
@@ -90,6 +93,24 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
       h('td', {}, d.status || h('span', { class: 'muted' }, '—'))))));
   }
 
+  function syncTable(items: SyncItem[]) {
+    if (!items.length) return h('p', { class: 'muted small' }, 'Nothing waiting. Saves are reaching the sheet.');
+    const groups: [SyncItem['kind'], string, string][] = [
+      ['inflight', 'Writing now', 'Normally in the sheet within about a minute.'],
+      ['blocked', 'Stuck behind a conflict', 'A later save for the same device. It writes once the earlier conflict is resolved.'],
+      ['conflict', 'Conflicts', 'Not written because the sheet row was edited by hand. The sheet keeps the manual edit.'],
+    ];
+    return h('div', { class: 'stack' }, groups.filter(([k]) => items.some(i => i.kind === k)).map(([k, title, help]) => h('div', {},
+      h('strong', {}, `${title} (${items.filter(i => i.kind === k).length})`), h('div', { class: 'muted small' }, help),
+      h('table', { class: 'ops-table' }, h('tbody', {}, items.filter(i => i.kind === k).map(i => h('tr', {},
+        h('td', { class: 'mono' }, i.serial, i.model ? h('div', { class: 'muted small' }, i.model) : null),
+        h('td', {}, `Grade ${i.grade} · ${i.tester || '—'}`, h('div', { class: 'muted small' }, `Saved ${shortDate(i.createdAt.slice(0, 10))} ${nzTime(i.createdAt)}`)),
+        h('td', {}, i.reason),
+        h('td', { class: 'num' }, i.row
+          ? h('a', { href: `${GRADING_TAB}&range=A${i.row}`, target: '_blank', rel: 'noopener' }, `Row ${i.row} ↗`)
+          : h('a', { href: GRADING_TAB, target: '_blank', rel: 'noopener', title: 'Not in the sheet yet. Opens the Grading tab; search for the serial.' }, 'Grading tab ↗')))))))));
+  }
+
   function section(title: string, action: HTMLElement | null, ...cards: HTMLElement[]) {
     return h('section', { class: 'stack' },
       h('div', { class: 'row between' }, h('h2', {}, title), action),
@@ -125,6 +146,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
   function render(r: J) {
     const o = r.orders, lists = o.lists, st = r.stock || {}, rep = st.repairs || { devices: 0, items: [] }, lock = st.locked || { devices: 0, items: [] };
     const g = r.grading || {};
+    const gq = r.gradingQueue || { inFlight: 0, blocked: 0, conflicts: 0, items: [] };
     // ASNs DB snapshot (apps-script/AsnOpsSync.gs). Cards say "Not connected" until the first sync,
     // and flag the source as stale if the sheet hasn't synced for 30 minutes.
     const asn = r.asn && r.asn.syncedAt ? r.asn : null;
@@ -147,8 +169,10 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
           note: asnNote(), drillLabel: 'Review received devices', drill: asn ? () => asnOrderTable(asn.lists.untested) : undefined }),
         card({ title: 'Graded · not POed', count: asn ? asn.gradedNoPo : null, unit: 'devices', tone: asnStale ? 'muted' : undefined,
           note: asn ? `${asn.readyForPo} ready for PO · ${asn.repairsNoPo} repairs · ${asn.lockedNoPo} locked` : asnNote(), drillLabel: 'Review ready for PO', drill: asn ? () => asnDeviceTable(asn.lists.ready) : undefined }),
-        card({ title: 'Grading sheet sync', count: g.pending ?? 0, unit: 'waiting to write', tone: g.conflicts > 0 ? 'alert' : undefined,
-          note: `${g.conflicts ?? 0} conflict${g.conflicts === 1 ? '' : 's'} to review` })),
+        card({ title: 'Grading sheet sync', count: gq.inFlight, unit: 'writing now',
+          tone: gq.blocked + gq.conflicts > 0 ? 'alert' : undefined,
+          note: gq.blocked + gq.conflicts ? `${gq.conflicts} conflict${gq.conflicts === 1 ? '' : 's'} · ${gq.blocked} stuck behind them` : 'All saves reaching the sheet',
+          drillLabel: 'Review sync issues', drill: () => syncTable(gq.items) })),
       section('Repairs & unlocking', null,
         card({ title: 'Repairs · Cin7', count: rep.devices, unit: 'devices', note: ageNote(rep), drill: () => stockTable(rep.items) }),
         card({ title: 'Locked · Cin7', count: lock.devices, unit: 'devices', note: ageNote(lock), drill: () => stockTable(lock.items) }),
