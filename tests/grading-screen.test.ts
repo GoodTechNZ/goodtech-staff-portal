@@ -93,3 +93,21 @@ describe('already graded devices', () => {
     expect(button(el, 'Save changes')).toBeUndefined();
   });
 });
+
+describe('product-code change button', () => {
+  const graded = {
+    graded: true, canMove: true,
+    record: { grade: '2', colour: 'Black', tester: 'Haobin', date: '2026-11-04', location: 'Cabinet', destination: 'Ready For Sale', status: '', notes: '', tests: {} },
+    sheet: { row: 36049, grade: '2', colour: 'Black', status: null, location: 'Cabinet', tester: 'Haobin', productCode: 'PH13256BK-2' },
+  };
+  it('is offered to managers only', async () => {
+    const { auth } = await import('../src/api.ts');
+    auth.staff = { id: 's1', name: 'Crystal', role: 'staff' };
+    let el = await open({ recordId: 'r1', version: '3', row: 36049 }, graded);
+    expect(button(el, 'Change product code')).toBeUndefined();
+    expect(el.textContent).toContain('ask a manager');
+    auth.staff = { id: 's2', name: 'Fraser', role: 'manager' };
+    el = await open({ recordId: 'r1', version: '3', row: 36049 }, graded);
+    expect(button(el, 'Change product code')).toBeDefined();
+  });
+});

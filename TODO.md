@@ -22,3 +22,12 @@ Set the `PORTAL_BRIDGE_TOKEN` edge-function secret to the existing sales-desk br
 
 ## Dashboard: NZ public holidays
 High alert counts Monday–Friday business days but doesn't skip NZ national and Auckland anniversary holidays yet.
+
+## Product-code changes: update the ASNs DB script
+Paste the new `apps-script/AsnOpsSync.gs` over the old one in ASNs DB (no other setup). Until then a
+device's Cin7 adjustment and Grading row still update, but its change stays at "updating sheets" and
+ASNs Code (AE) isn't checked.
+
+## Grading import
+`refreshFastGrading` (bound to ASNs DB) imports the Grading sheet every 10 minutes. It stopped for a
+day on 5 Nov (duplicate key, fixed). Check its trigger stays installed.

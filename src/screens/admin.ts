@@ -1,6 +1,7 @@
 import { auth, call, ApiError, J } from '../api.ts';
 import { h, mount, message, askPin, nzTime, nzToday, money, busy } from '../ui.ts';
 import type { ScreenCtx } from '../main.ts';
+import { stockCodeCard } from './codechange.ts';
 
 // Daily per-person summary and review flags. Staff see their own day; managers see everyone,
 // system health, and can reset staff PINs and manage terminals.
@@ -143,7 +144,8 @@ export function adminScreen(_ctx: ScreenCtx): HTMLElement {
     return box;
   }
 
-  mount(root, h('section', { class: 'card row between wrap' }, h('h1', {}, 'Admin'), h('div', { class: 'row' }, day, h('button', { type: 'button', class: 'btn', onclick: () => load() }, 'Refresh'))), body);
+  mount(root, h('section', { class: 'card row between wrap' }, h('h1', {}, 'Admin'), h('div', { class: 'row' }, day, h('button', { type: 'button', class: 'btn', onclick: () => load() }, 'Refresh'))), body,
+    manager ? stockCodeCard() : null);
   load();
   return root;
 }

@@ -6,7 +6,12 @@
  *     grade (AA), status (AD) and location (AF);
  *   - Shipment Check: SO (A), warehouse (B) and Delivered (AL).
  * The portal works out Received · not tested and Graded / Repairs / Locked · not POed from these.
- * It only reads the sheet; nothing in the sheet is changed.
+ *
+ * Product-code changes: after a manager changes a device's product code in the portal (Cin7 stock
+ * adjustment + new grade/colour in the Grading tab), the portal returns it here. This script then
+ * checks the device's ASNs Code (column AE). If the formula already shows the new code it is left
+ * alone; otherwise AE is set to the new code and the old code is kept in Old Stock Code (AJ, if
+ * empty). Those are the only cells it ever writes.
  *
  * Setup (once), in ASNs DB → Extensions → Apps Script:
  *   1. Add a script file, delete the empty myFunction it starts with, paste this in and save.
@@ -24,7 +29,7 @@ function asnOpsSync() {
 
   var asns = ss.getSheetByName('ASNs');
   var lastRow = asns.getLastRow();
-  var values = asns.getRange(2, 1, Math.max(lastRow - 1, 0), 33).getDisplayValues(); // A:AG
+  var values = asns.getRange(2, 1, Math.max(lastRow - 1, 0), 36).getDisplayValues(); // A:AJ
   var rows = [], total = 0;
   for (var i = 0; i < values.length; i++) {
     var r = values[i], serial = String(r[5]).trim();
@@ -50,6 +55,39 @@ function asnOpsSync() {
   });
   if (res.getResponseCode() !== 200) throw new Error('Portal sync failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
   Logger.log('Synced ' + rows.length + ' ASN rows without a PO and ' + shipments.length + ' Shipment Check rows.');
+
+  var reply = JSON.parse(res.getContentText());
+  if (reply.codeWrites && reply.codeWrites.length) asnOpsWriteCodes_(token, asns, values, reply.codeWrites);
+}
+
+// Make ASNs Code (AE) show each changed device's new product code. See the note at the top.
+function asnOpsWriteCodes_(token, asns, values, writes) {
+  var CODE = 31, OLD = 36; // AE, AJ (1-based columns)
+  var results = writes.map(function (w) {
+    try {
+      var rows = [];
+      for (var i = 0; i < values.length; i++) if (String(values[i][5]).trim() === w.serial) rows.push(i + 2);
+      if (rows.length !== 1) throw new Error(rows.length ? 'Serial is on ' + rows.length + ' ASNs rows' : 'Serial not found in ASNs');
+      var row = rows[0], cell = asns.getRange(row, CODE);
+      SpreadsheetApp.flush();
+      var shown = String(cell.getDisplayValue()).trim();
+      if (shown === w.to) return { id: w.id, ok: true, row: row, how: 'formula' };
+      var old = asns.getRange(row, OLD);
+      if (!String(old.getDisplayValue()).trim()) old.setValue(shown && shown.indexOf('-') > 0 ? shown : w.from);
+      cell.setValue(w.to);
+      SpreadsheetApp.flush();
+      if (String(cell.getDisplayValue()).trim() !== w.to) throw new Error('AE did not update');
+      return { id: w.id, ok: true, row: row, how: 'set', was: shown };
+    } catch (e) {
+      return { id: w.id, ok: false, error: String(e.message || e) };
+    }
+  });
+  var res = UrlFetchApp.fetch(ASN_OPS_PORTAL_URL, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-sync-token': token },
+    payload: JSON.stringify({ action: 'sync.asn_codes', results: results }),
+  });
+  Logger.log('Product codes: ' + results.filter(function (r) { return r.ok; }).length + ' of ' + results.length + ' updated (' + res.getResponseCode() + ').');
 }
 
 function installAsnOpsTrigger() {

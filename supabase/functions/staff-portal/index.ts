@@ -6,6 +6,7 @@
 import {
   HttpError, J, nzDate, validSerial, gradingRecord, uuidOrNull, needsPin, bridgeBody,
   discountedLines, shippingRef, SHIPPING_ACTIONS, SALES_ACTIONS, pickRequest, cin7ErrorText,
+  CIN7_STOCK_LOCATIONS, stockAt, sameBalances, codePlan, adjustmentBody, verifyAdjustment, poConfirmsDevice,
 } from './logic.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
@@ -239,6 +240,145 @@ async function authorisePicks(ctx: Ctx, ids: string[]) {
   return { results };
 }
 
+// ---------- Stock: product-code changes (managers) ----------
+const SKU_RE = /^[A-Z0-9][A-Z0-9-]{1,40}$/;
+
+async function cin7Product(sku: string): Promise<J> {
+  if (!SKU_RE.test(sku)) throw new HttpError(400, 'Enter a valid product code.');
+  const [row] = await rest('cin7_products?select=product_id&sku=eq.' + encodeURIComponent(sku) + '&limit=1');
+  if (!row) throw new HttpError(404, `${sku} is not in Cin7.`);
+  const d = await cin7('/product?ID=' + encodeURIComponent(row.product_id));
+  const p = (d.Products || []).find((x: J) => x.ID === row.product_id);
+  if (!p) throw new HttpError(404, `Cin7 details for ${sku} are unavailable.`);
+  return p;
+}
+
+async function liveBalances(plan: J) {
+  const [a, z] = await Promise.all([
+    cin7('/ref/productavailability?SKU=' + encodeURIComponent(plan.source.SKU) + '&Limit=1000'),
+    cin7('/ref/productavailability?SKU=' + encodeURIComponent(plan.target.SKU) + '&Limit=1000'),
+  ]);
+  if (a.Total > 1000 || z.Total > 1000) throw new HttpError(400, 'Too many stock rows; change this in Cin7.');
+  return { from: stockAt(a, plan.source.SKU, plan.location), to: stockAt(z, plan.target.SKU, plan.location) };
+}
+
+const codeJob = (id: string, action: string, extra: J = {}) => rpc('portal_code_job', { p: { id, action, ...extra } });
+
+async function stock(ctx: Ctx, action: string, b: J) {
+  if (ctx.staff.role !== 'manager') throw new HttpError(403, 'Only a manager can change product codes.');
+  if (action === 'products') {
+    const q = String(b.q || '').trim().replace(/[^A-Za-z0-9 .\/-]/g, '').slice(0, 40);
+    if (q.length < 2) return { products: [] };
+    const like = encodeURIComponent('*' + q + '*');
+    const rows: J[] = await rest(`cin7_products?select=sku,name&status=eq.Active&product_type=eq.Stock&or=(sku.ilike.${like},name.ilike.${like})&order=sku&limit=25`);
+    const loc = (CIN7_STOCK_LOCATIONS as readonly string[]).includes(String(b.location)) ? String(b.location) : null;
+    let onHand: Record<string, number> = {};
+    if (loc && rows.length) {
+      const av: J[] = await rest('cin7_product_availability?select=sku,on_hand&location=eq.' + encodeURIComponent(loc) + '&sku=in.(' + rows.map(r => '"' + r.sku + '"').join(',') + ')');
+      onHand = Object.fromEntries(av.map(a => [a.sku, Number(a.on_hand)]));
+    }
+    return { products: rows.map(r => ({ sku: r.sku, name: r.name, onHand: loc ? onHand[r.sku] ?? 0 : null })) };
+  }
+  if (action === 'device') {
+    const serial = validSerial(b.serial);
+    const context = await rpc('portal_code_device_context', { p_serial: serial, p_record: uuidOrNull(b.recordId) });
+    let siblings: J[] = [];
+    if (context.sku) {
+      const base = String(context.sku).replace(/-\d$/, '');
+      siblings = await rest('cin7_products?select=sku,name&status=eq.Active&product_type=eq.Stock&sku=like.' + encodeURIComponent(base + '-*') + '&sku=neq.' + encodeURIComponent(context.sku) + '&order=sku');
+    }
+    return { ...context, siblings };
+  }
+  if (action === 'preview') {
+    const id = uuidOrNull(b.requestId);
+    if (!id) throw new HttpError(400, 'Invalid request. Start again.');
+    const kind = b.kind === 'device' ? 'device' : 'stock';
+    const location = String(b.location || '');
+    const toSku = String(b.toSku || '').trim().toUpperCase();
+    const reason = String(b.reason || '').trim().slice(0, 300);
+    if (!reason) throw new HttpError(400, 'Enter a reason.');
+    let fromSku: string, quantity: number, device: J | null = null;
+    if (kind === 'device') {
+      device = await rpc('portal_code_device_context', { p_serial: validSerial(b.serial), p_record: uuidOrNull(b.recordId) });
+      if (device!.problems?.length) throw new HttpError(409, device!.problems.join(' '));
+      fromSku = device!.sku; quantity = 1;
+      if (!device!.purchaseId) throw new HttpError(409, `${device!.po} is not in the portal's Cin7 purchase list yet. Try again later.`);
+      const purchase = await cin7('/purchase?ID=' + encodeURIComponent(device!.purchaseId));
+      if (!poConfirmsDevice(purchase, device!.serial)) throw new HttpError(409, `${device!.po} doesn't confirm this IMEI was received. Check the receipt in Cin7 first.`);
+    } else {
+      fromSku = String(b.fromSku || '').trim().toUpperCase(); quantity = Number(b.quantity);
+    }
+    const [source, target] = await Promise.all([cin7Product(fromSku), cin7Product(toSku)]);
+    const draft = { source: { SKU: source.SKU }, target: { SKU: target.SKU }, location };
+    if (!(CIN7_STOCK_LOCATIONS as readonly string[]).includes(location)) throw new HttpError(400, 'Choose the Cin7 location.');
+    const live = await liveBalances(draft);
+    const plan = codePlan(source, target, live.from, live.to, location, quantity, kind === 'device');
+    if (device) Object.assign(plan, { serial: device.serial, po: device.po, sheetRow: device.sheetRow, current: { grade: device.grade, colour: device.colour } });
+    const change = await rpc('portal_code_prepare', { p: {
+      id, kind, serial: device?.serial ?? null, recordId: device?.recordId ?? null, version: device?.version ?? null,
+      quantity, reason, staffId: ctx.staff.id, staffName: ctx.staff.name, plan,
+    } });
+    await log(ctx, 'stock', 'preview', device?.serial || `${fromSku}→${toSku}`, 'ok', { changeId: id, kind, fromSku, toSku, quantity, location });
+    return { change };
+  }
+  if (action === 'commit') {
+    const id = uuidOrNull(b.id);
+    if (!id) throw new HttpError(400, 'Invalid request.');
+    let c = await codeJob(id, 'get');
+    if (c.staff_id !== ctx.staff.id) throw new HttpError(403, 'Only the manager who reviewed this change can confirm it.');
+    const ref = c.serial || `${c.from_sku}→${c.to_sku}`;
+    try {
+      if (c.state === 'preview') {
+        if (!sameBalances(await liveBalances(c.plan), c.plan)) throw new HttpError(409, 'Stock changed in Cin7 since the review. Start again.');
+        c = await codeJob(id, 'reserve');
+      }
+      if (c.state === 'reserved') {
+        if (!sameBalances(await liveBalances(c.plan), c.plan)) {
+          await codeJob(id, 'transition', { expected: 'reserved', next: 'review', error: 'Stock changed before the adjustment was created. Nothing was changed in Cin7.' });
+          throw new HttpError(409, 'Stock changed in Cin7 since the review. Nothing was changed.');
+        }
+        c = await codeJob(id, 'transition', { expected: 'reserved', next: 'creating' });
+        try {
+          const draft = await cin7('/stockadjustment', 'POST', adjustmentBody(c));
+          verifyAdjustment(draft, c);
+          if (draft.Status !== 'DRAFT') throw new Error('Unexpected adjustment status.');
+          c = await codeJob(id, 'transition', { expected: 'creating', next: 'draft', taskId: draft.TaskID, adjustmentNumber: draft.StocktakeNumber });
+        } catch (e) {
+          await codeJob(id, 'transition', { expected: 'creating', next: 'review', error: 'The Cin7 draft adjustment needs checking (reference Code change ' + id + '). Do not create another.' });
+          throw e;
+        }
+      }
+      if (c.state === 'draft') {
+        if (!sameBalances(await liveBalances(c.plan), c.plan)) {
+          await codeJob(id, 'transition', { expected: 'draft', next: 'review', error: `Stock changed after the draft ${c.adjustment_number || ''} was created. Review the draft in Cin7.` });
+          throw new HttpError(409, 'Stock changed in Cin7. The adjustment was left as a draft for review.');
+        }
+        c = await codeJob(id, 'transition', { expected: 'draft', next: 'completing' });
+        try { await cin7('/stockadjustment', 'PUT', { ...adjustmentBody(c), TaskID: c.task_id, Status: 'COMPLETED' }); }
+        catch { /* read the known task back below; never replay a write that may have completed */ }
+      }
+      if (c.state === 'completing' && c.task_id) {
+        const done = await cin7('/stockadjustment?TaskID=' + encodeURIComponent(c.task_id));
+        verifyAdjustment(done, c);
+        if (done.Status !== 'COMPLETED') throw new HttpError(409, `Cin7 has not confirmed ${c.adjustment_number || 'the adjustment'} as completed. Refresh the status; don't start another change.`);
+        c = await codeJob(id, 'transition', { expected: 'completing', next: 'cin7_done' });
+      }
+      await log(ctx, 'stock', 'commit', ref, 'ok', { changeId: id, state: c.state, adjustment: c.adjustment_number, from: c.from_sku, to: c.to_sku, quantity: c.quantity });
+      return { change: c };
+    } catch (e) {
+      await log(ctx, 'stock', 'commit', ref, 'error', { changeId: id, error: String((e as Error).message).slice(0, 300) });
+      throw e;
+    }
+  }
+  if (action === 'status') {
+    const id = uuidOrNull(b.id);
+    if (!id) throw new HttpError(400, 'Invalid request.');
+    return { change: await codeJob(id, 'get') };
+  }
+  if (action === 'recent') return { changes: await rpc('portal_code_recent', { p_limit: 20 }) };
+  throw new HttpError(400, 'Unknown stock action.');
+}
+
 // ---------- Dashboard ----------
 async function dashboard(ctx: Ctx, action: string, b: J) {
   if (action === 'summary') {
@@ -315,7 +455,7 @@ async function admin(ctx: Ctx, action: string, b: J, req: Request) {
   return { ok: true };
 }
 
-const MODULES: Record<string, (ctx: Ctx, action: string, b: J, req: Request) => Promise<J>> = { grading, shipping, sales, dashboard, admin };
+const MODULES: Record<string, (ctx: Ctx, action: string, b: J, req: Request) => Promise<J>> = { grading, shipping, sales, dashboard, admin, stock };
 
 async function handle(req: Request): Promise<J> {
   const raw = await req.text();
@@ -330,7 +470,14 @@ async function handle(req: Request): Promise<J> {
   if (module === 'sync' && action === 'asn') {
     const [cfg] = await rest('portal_config?select=value&key=eq.asn_sync_token_sha256');
     if (!cfg || !syncToken || (await sha256(syncToken)) !== cfg.value) throw new HttpError(401, 'Invalid sync token.');
-    return await rpc('asn_ops_ingest', { p: { rowsTotal: b.rowsTotal, rows: b.rows, shipments: b.shipments } });
+    const ingest = await rpc('asn_ops_ingest', { p: { rowsTotal: b.rowsTotal, rows: b.rows, shipments: b.shipments } });
+    // Device product-code changes waiting for the ASNs Code column (AE) to be checked/updated.
+    return { ...ingest, codeWrites: await rpc('portal_code_sheet_pending') };
+  }
+  if (module === 'sync' && action === 'asn_codes') {
+    const [cfg] = await rest('portal_config?select=value&key=eq.asn_sync_token_sha256');
+    if (!cfg || !syncToken || (await sha256(syncToken)) !== cfg.value) throw new HttpError(401, 'Invalid sync token.');
+    return { ok: true, updated: await rpc('portal_code_sheet_ack', { p: { results: Array.isArray(b.results) ? b.results.slice(0, 200) : [] } }) };
   }
 
   if (module === 'terminal' && action === 'enrol') {

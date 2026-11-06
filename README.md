@@ -38,15 +38,36 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
 Scan a serial/IMEI, grade it, record the 12 functional tests and the destination, then save. The tester
 and date always come from the signed-in session.
 
-**Serial already in the Grading sheet:**
+**A device is graded once.** Scanning a graded device (in the portal or already in the Grading sheet)
+shows its grade and location instead of the grading form. Staff can then:
 
-- **Same grade:** the save links to the existing row instead of blocking or writing a duplicate.
-  - The screen offers *Same grade — link to row N*, which writes nothing.
-  - The database also links a save that races a manual sheet entry.
-  - The worker's `CONFLICT: Serial was added to the sheet separately.` is resolved automatically on the next claim, ack or import.
-  - The outbox status is `linked`.
-- **Different grade:** the existing row is updated, which needs the PIN.
-- Other conflicts (manual sheet edits) stay as `conflict` for review. The Dashboard shows how many there are.
+- **Move it** (Ready For Sale / Repairs / Locked) and update its status note and notes. The change is
+  queued for the Grading row like any save and recorded in `operations.device_transfers`.
+- **Managers: Change product code** (grade, colour or model correction). See below.
+
+The database refuses a second grading even if the screen is bypassed (`portal_grading_save`).
+Duplicate saves can be cancelled with `portal_grading_dismiss(record, reason)` (outbox status `dismissed`).
+
+## Product-code changes (managers, PIN to confirm)
+
+- **One device** (Grading → scan → *Change product code*): pick the new SKU (other grades are one tap)
+  and a reason, review the live Cin7 balances, confirm with the PIN.
+- **Stock without IMEIs** (Admin → *Move stock between product codes*): from/to SKU, location, quantity.
+
+Cin7 is changed with one stock adjustment, reference `Code change <id>`. It takes N off the old SKU and
+puts N on the new SKU at the same location, at the old SKU's average cost. Before each step the live
+balances are re-checked, and a draft is created before it's completed. For a device, the PO must show
+the IMEI received and there must be no shipping record.
+
+After Cin7, a device change:
+
+1. queues the new grade and colour for its Grading row (sheet worker, within a minute or two);
+2. makes ASNs DB (`AsnOpsSync.gs`, every 10 minutes) check ASNs Code (AE). If the formula already
+   shows the new SKU it is left alone; otherwise AE is set to the new SKU and the old code is kept in
+   Old Stock Code (AJ).
+
+Progress and anything that needs review are listed in Admin → *Product-code changes*
+(`portal_code_changes`).
 
 ## Daily summaries and flags
 

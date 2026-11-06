@@ -1,4 +1,5 @@
-import { call, ApiError, uuid, J } from '../api.ts';
+import { auth, call, ApiError, uuid, J } from '../api.ts';
+import { deviceCodePanel } from './codechange.ts';
 import { h, mount, message, scanInput, segmented, askPin, busy, nzTime } from '../ui.ts';
 import {
   TESTS, DESTINATIONS, GradingForm, Grade, Destination, TestResult, emptyForm, formFromRecord, problems,
@@ -77,7 +78,13 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
         h('span', { class: 'chip chip-synced' }, 'Already graded')),
       message('info', `${facts}.${(sh?.status || rec.status) ? ' Status: ' + (sh?.status || rec.status) + '.' : ''} It can't be graded again.`));
 
-    const wrongGrade = h('p', { class: 'muted small' }, 'Wrong grade, colour or model? That changes the product code and moves the stock in Cin7, so ask a manager.');
+    // Grade, colour and model corrections are product-code changes (Cin7 stock moves): managers only.
+    const wrongGrade = h('div', { class: 'stack' });
+    const showWrongGrade = () => mount(wrongGrade, auth.staff?.role === 'manager' && d.recordId
+      ? h('div', { class: 'row between wrap' }, h('span', { class: 'muted small' }, 'Wrong grade, colour or model?'),
+          h('button', { type: 'button', class: 'btn btn-sm', onclick: () => mount(wrongGrade, deviceCodePanel({ serial: d.serial, recordId: d.recordId! }, showWrongGrade)) }, 'Change product code'))
+      : h('p', { class: 'muted small' }, 'Wrong grade, colour or model? That changes the product code and moves the stock in Cin7, so ask a manager.'));
+    showWrongGrade();
 
     if (!r.canMove) {
       mount(work, head, h('section', { class: 'card stack' },
