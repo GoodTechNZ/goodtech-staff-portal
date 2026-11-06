@@ -9,7 +9,7 @@ import type { ScreenCtx } from '../main.ts';
 type Doc = { document_number: string; reference?: string; party?: string; document_date: string; business_days?: number; stage?: string; is_pickup?: boolean };
 type StockItem = { sku: string; name: string; qty: number; age_days: number | null };
 type AsnDevice = { serial: string; order_number: string; grade: string; location: string; status: string };
-type PickOrder = { document_number: string; reference: string; party: string; document_date: string; carrier: string; is_pickup: boolean; address: string; note: string | null; lines: { sku: string; name: string; qty: number }[] };
+type PickOrder = { id: string; pick_status?: string | null; pick_error?: string | null; document_number: string; reference: string; party: string; document_date: string; carrier: string; is_pickup: boolean; address: string; note: string | null; lines: { sku: string; name: string; qty: number }[] };
 type SyncItem = { kind: 'inflight' | 'blocked' | 'conflict'; serial: string; model: string | null; tester: string; grade: string; destination: string; createdAt: string; row: number | null; reason: string };
 type AsnOrder = { order_number: string; shipment: string; delivered: string; devices: number };
 
@@ -41,6 +41,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
   const root = h('div', { class: 'stack ops' });
   const body = h('div', { class: 'stack' });
   const stamp = h('span', { class: 'muted small' });
+  const pickPanel = h('div', { class: 'stack' });
   const refreshBtn = h('button', { type: 'button', class: 'btn btn-sm', onclick: () => load() }, 'Refresh');
 
   function card(o: CardOpts) {
@@ -136,11 +137,53 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
           o.note ? h('div', { class: 'pick-note' }, 'Note: ' + o.note) : null,
           h('div', { class: 'pick-foot' }, h('span', {}, 'Picked by ____________________'), h('span', { class: 'muted' }, `Printed ${printed}`)))));
         document.body.appendChild(root);
-        const done = () => { root.remove(); window.removeEventListener('afterprint', done); };
+        let asked = false;
+        const done = () => {
+          root.remove(); window.removeEventListener('afterprint', done);
+          if (!asked) { asked = true; askMoveToPicked(orders); }
+        };
         window.addEventListener('afterprint', done);
         window.print();
+        // Some browsers return from print() without firing afterprint: still ask, but leave the
+        // print content in place until afterprint (removing it early can blank the printout).
+        setTimeout(() => { if (!asked) { asked = true; askMoveToPicked(orders); } }, 1000);
       } catch (err) { mount(body, message('error', err instanceof ApiError ? err.message : 'Pick lists could not be loaded.')); }
     });
+  }
+
+  // Once the lists are in hand, authorise the Pick in Cin7 for those orders so they move from New
+  // to Picked (awaiting packing). Nothing changes in Cin7 unless the person confirms.
+  function askMoveToPicked(orders: PickOrder[]) {
+    const yes = h('button', { type: 'button', class: 'btn btn-primary' }, `Yes — mark ${orders.length} as picked in Cin7`);
+    const no = h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => mount(pickPanel) }, 'No, they didn’t print');
+    const status = h('div', { class: 'status-slot' });
+    yes.addEventListener('click', () => busy(yes, async () => {
+      no.disabled = true;
+      const results: J[] = [];
+      try {
+        for (let i = 0; i < orders.length; i += 10) {
+          status.replaceChildren(message('info', `Updating Cin7… ${Math.min(i + 10, orders.length)} of ${orders.length}`));
+          const r = await call<{ results: J[] }>('dashboard.pick_confirm', { ids: orders.slice(i, i + 10).map(o => o.id) });
+          results.push(...r.results);
+        }
+      } catch (err) {
+        status.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Cin7 could not be updated. Refresh, then try again.'));
+        no.disabled = false;
+        return;
+      }
+      const ok = results.filter(r => r.ok), bad = results.filter(r => !r.ok);
+      const num = (r: J) => r.number || orders.find(o => o.id === r.id)?.document_number || r.id;
+      mount(pickPanel, h('section', { class: 'card stack' },
+        message(bad.length ? 'warn' : 'ok', `${ok.length} order${ok.length === 1 ? '' : 's'} moved to Picked in Cin7${bad.length ? `; ${bad.length} need${bad.length === 1 ? 's' : ''} a look` : ''}.`),
+        bad.length ? h('ul', { class: 'small' }, bad.map(r => h('li', {}, h('strong', {}, num(r)), ' — ', r.error || 'Not updated.'))) : null,
+        h('div', { class: 'row end' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => mount(pickPanel) }, 'Close'))));
+      load();
+    }));
+    mount(pickPanel, h('section', { class: 'card stack' },
+      h('h3', {}, 'Did the pick lists print?'),
+      h('p', { class: 'muted' }, `Confirming marks ${orders.map(o => o.document_number).join(', ')} as picked in Cin7, so they move to Picked, awaiting packing.`),
+      status, h('div', { class: 'row end wrap' }, no, yes)));
+    pickPanel.scrollIntoView?.({ block: 'start' });
   }
 
   function render(r: J) {
@@ -185,7 +228,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
         card({ title: 'Received at GT', count: null, status: 'Not recorded yet' })),
       h('details', { class: 'ops-defs' },
         h('summary', {}, 'Count definitions & data freshness'),
-        h('p', { class: 'small muted' }, 'Orders count once per open Cin7 sale, excluding quotes, drafts, voided, cancelled and completed sales. New = not picked. Picked = picked, not yet packed. Packed · courier = packed, not shipped, not a pick-up. Awaiting pick-up = ready notification recorded in the portal, not yet collected.'),
+        h('p', { class: 'small muted' }, 'Orders count once per open Cin7 sale, excluding quotes, drafts, voided, cancelled and completed sales. New = not picked. Picked = picked, not yet packed (confirming printed pick lists authorises the Pick in Cin7, which moves an order here). Packed · courier = packed, not shipped, not a pick-up. Awaiting pick-up = ready notification recorded in the portal, not yet collected.'),
         h('p', { class: 'small muted' }, 'High alert uses the order date as day zero and counts Monday–Friday after it; more than 1 business day is overdue (a Friday order is overdue on Tuesday). It includes every open order, including shipped orders still awaiting invoice. NZ public holidays are not excluded yet.'),
         h('p', { class: 'small muted' }, 'Repairs and Locked count devices (phones, watches, tablets, laptops) on hand in the Cin7 Repairs and Locked Devices locations. Age is quantity-weighted stock age from purchase receipts, not time spent in the location.'),
         h('p', { class: 'small muted' }, 'Testing and "not POed" come from ASNs DB, read every 10 minutes. Received · not tested: no grade (column AA) on an order whose Shipment Check row has a Delivered date (column AL). Not POed: column AG blank and graded; Locked if status or location mentions lock, MDM or RML, Repairs for any other fault note or a Repairs location, otherwise ready for PO. Each serial counts once.'),
@@ -200,7 +243,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
     finally { refreshBtn.disabled = false; }
   }
 
-  mount(root, h('section', { class: 'card row between wrap' }, h('h1', {}, 'Dashboard'), h('div', { class: 'row' }, stamp, refreshBtn)), body);
+  mount(root, h('section', { class: 'card row between wrap' }, h('h1', {}, 'Dashboard'), h('div', { class: 'row' }, stamp, refreshBtn)), pickPanel, body);
   load();
   return root;
 }

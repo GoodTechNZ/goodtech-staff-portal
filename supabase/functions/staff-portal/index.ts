@@ -5,7 +5,7 @@
 // staff-shipping and staff-sales-desk functions with the signed-in staff name.
 import {
   HttpError, J, nzDate, validSerial, gradingRecord, uuidOrNull, needsPin, bridgeBody,
-  discountedLines, shippingRef, SHIPPING_ACTIONS, SALES_ACTIONS,
+  discountedLines, shippingRef, SHIPPING_ACTIONS, SALES_ACTIONS, pickRequest, cin7ErrorText,
 } from './logic.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
@@ -187,6 +187,58 @@ async function sales(ctx: Ctx, action: string, b: J) {
   return data;
 }
 
+// ---------- Cin7 ----------
+let lastCin7 = 0;
+async function cin7(path: string, method = 'GET', body?: J): Promise<J> {
+  const id = Deno.env.get('CIN7_ACCOUNT_ID'), key = Deno.env.get('CIN7_APPLICATION_KEY');
+  if (!id || !key) throw new HttpError(503, 'Cin7 is not connected to the portal.');
+  // Cin7 allows 60 calls a minute; keep calls at least a second apart.
+  const wait = lastCin7 + 1000 - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastCin7 = Date.now();
+  const r = await fetch('https://inventory.dearsystems.com/ExternalApi/v2' + path, {
+    method, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(25000),
+    headers: { 'Content-Type': 'application/json', 'api-auth-accountid': id, 'api-auth-applicationkey': key },
+  });
+  const text = await r.text();
+  let data: unknown = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
+  if (!r.ok || Array.isArray(data)) throw new Error(cin7ErrorText(data, r.status));
+  return data as J;
+}
+
+// After pick lists print, authorise each order's Pick in Cin7 so it moves to Picked (awaiting
+// packing). Reads the Pick first and never writes to an order Cin7 already shows as picked.
+async function authorisePicks(ctx: Ctx, ids: string[]) {
+  const orders: J[] = await rpc('portal_pick_prepare', { p_ids: ids, p_staff: ctx.staff.id, p_name: ctx.staff.name });
+  const results: J[] = [];
+  for (const o of orders) {
+    let outcome: 'authorised' | 'review' = 'review', error: string | null = null, already = false;
+    try {
+      if (!Array.isArray(o.tasks) || o.tasks.length !== 1) throw new Error('This order has more than one fulfilment. Pick it in Cin7.');
+      const task = String(o.tasks[0]);
+      const current = await cin7('/Sale/Fulfilment/Pick?TaskID=' + encodeURIComponent(task));
+      if (current.Status === 'AUTHORISED') { outcome = 'authorised'; already = true; }
+      else if (current.Status === 'VOIDED') throw new Error('The pick is voided in Cin7.');
+      else {
+        let postError: string | null = null;
+        try { await cin7('/Sale/Fulfilment/Pick', 'POST', pickRequest(task, String(o.location || ''), o.lines)); }
+        catch (e) { postError = (e as Error).message; }
+        // Read back rather than trust the write response (a timeout may still have succeeded).
+        const after = await cin7('/Sale/Fulfilment/Pick?TaskID=' + encodeURIComponent(task));
+        if (after.Status === 'AUTHORISED') outcome = 'authorised';
+        else throw new Error(postError || `Cin7 shows the pick as ${String(after.Status || 'unknown').toLowerCase()}.`);
+      }
+    } catch (e) { error = e instanceof HttpError ? e.message : String((e as Error).message || e); }
+    await rpc('portal_pick_result', { p_id: o.id, p_status: outcome, p_error: error });
+    await log(ctx, 'dashboard', 'pick', o.number, outcome === 'authorised' ? 'ok' : 'error', { saleId: o.id, already, error });
+    results.push({ id: o.id, number: o.number, ok: outcome === 'authorised', already, error });
+  }
+  const done = new Set(orders.map(o => o.id));
+  for (const id of ids) if (!done.has(id)) results.push({ id, ok: false, skipped: true, error: 'Already picked or in progress.' });
+  return { results };
+}
+
 // ---------- Dashboard ----------
 async function dashboard(ctx: Ctx, action: string, b: J) {
   if (action === 'summary') {
@@ -199,6 +251,11 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
     return { day, manager, people, health };
   }
   if (action === 'picklists') return { orders: await rpc('portal_new_order_pick_lists') };
+  if (action === 'pick_confirm') {
+    const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x)).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 10) as string[];
+    if (!ids.length) throw new HttpError(400, 'No orders to move.');
+    return await authorisePicks(ctx, ids);
+  }
   if (action === 'ops') {
     const [ops, asn, gradingQueue] = await Promise.all([rpc('portal_ops_dashboard'), rpc('asn_ops_summary'), rpc('portal_grading_queue')]);
     return { ...ops, asn, gradingQueue };

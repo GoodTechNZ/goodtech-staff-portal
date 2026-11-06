@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  gradingRecord, needsPin, bridgeBody, discountedLines, nzDate, validSerial, GRADING_TESTS, HttpError,
+  gradingRecord, needsPin, bridgeBody, discountedLines, nzDate, validSerial, GRADING_TESTS, HttpError, pickRequest, cin7ErrorText,
 } from '../supabase/functions/staff-portal/logic.ts';
 
 const allPass = Object.fromEntries(GRADING_TESTS.map(t => [t, 'Pass']));
@@ -62,5 +62,27 @@ describe('helpers', () => {
     expect(validSerial(' 353911108940264 ')).toBe('353911108940264');
     expect(() => validSerial('12')).toThrow();
     expect(() => validSerial("1;drop")).toThrow();
+  });
+});
+
+describe('pickRequest', () => {
+  it('authorises every order line from the sale location, keeping non-inventory add-ons', () => {
+    const r = pickRequest('t1', 'Ready For Sale', [
+      { ProductID: 'p1', SKU: 'PH12128BU-1', Name: 'iPhone 12', Quantity: 1, NonInventory: false },
+      { ProductID: 'p2', SKU: 'ACSCNPRFTPH', Name: 'Screen protector', Quantity: 1, NonInventory: true },
+      { ProductID: 'p3', SKU: 'ZERO', Name: 'Nothing', Quantity: 0 },
+    ]);
+    expect(r).toEqual({ TaskID: 't1', Status: 'AUTHORISED', Lines: [
+      { ProductID: 'p1', SKU: 'PH12128BU-1', Name: 'iPhone 12', Location: 'Ready For Sale', Quantity: 1, NonInventory: false },
+      { ProductID: 'p2', SKU: 'ACSCNPRFTPH', Name: 'Screen protector', Location: 'Ready For Sale', Quantity: 1, NonInventory: true },
+    ] });
+  });
+  it('refuses an order with nothing to pick', () => {
+    expect(() => pickRequest('t1', 'Ready For Sale', [])).toThrow(HttpError);
+    expect(() => pickRequest('t1', '', [{ ProductID: 'p', Quantity: 1 }])).toThrow(HttpError);
+  });
+  it('reads Cin7 error arrays', () => {
+    expect(cin7ErrorText([{ ErrorCode: 400, Exception: 'Not enough stock' }], 400)).toBe('Not enough stock');
+    expect(cin7ErrorText(null, 503)).toBe('Cin7 request failed (HTTP 503).');
   });
 });

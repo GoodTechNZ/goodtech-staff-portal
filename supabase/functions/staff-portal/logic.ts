@@ -84,3 +84,20 @@ export function discountedLines(order: J | undefined): number {
 export function shippingRef(body: J, result: J): string {
   return String(body.salesOrderNumber || result?.cin7OrderNumber || result?.shipment?.cin7_order_number || body.trackingNumber || '').slice(0, 120);
 }
+
+// Cin7 Pick authorisation for a printed pick list. Mirrors the lines Cin7 itself writes when a
+// pick is authorised in the app: every order line, from the sale's location.
+export function pickRequest(task: string, location: string, lines: J[]): J {
+  const picked = (lines || []).filter(l => l?.ProductID && Number(l.Quantity) > 0);
+  if (!task || !location || !picked.length) throw new HttpError(400, 'Order has nothing to pick.');
+  return {
+    TaskID: task, Status: 'AUTHORISED',
+    Lines: picked.map(l => ({ ProductID: l.ProductID, SKU: l.SKU, Name: l.Name, Location: location, Quantity: Number(l.Quantity), NonInventory: !!l.NonInventory })),
+  };
+}
+
+export function cin7ErrorText(data: unknown, status: number): string {
+  const first = Array.isArray(data) ? data[0] : data as J;
+  const text = String(first?.Exception || first?.Message || first?.error || '').trim();
+  return (text || `Cin7 request failed (HTTP ${status}).`).slice(0, 300);
+}
