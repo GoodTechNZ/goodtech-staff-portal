@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { ScanDetector, renderSalesOps, dollars, pct } from '../src/screens/salesops.ts';
+import { ScanDetector, renderSalesOps, dollars, pct, fmtTime } from '../src/screens/salesops.ts';
 
 describe('ScanDetector', () => {
   it('spots a scanner burst ending in Enter', () => {
@@ -58,5 +58,14 @@ describe('renderSalesOps', () => {
     const el = document.createElement('div');
     el.append(...renderSalesOps({ from: '2026-11-11', to: '2026-11-11', sales: { deviceUnits: 0 }, returns: {}, topModels: [], channels: [] }));
     expect(el.textContent).toContain('Nothing in this period.');
+  });
+});
+
+describe('fmtTime', () => {
+  it('shows Cin7 NZ-local times as they are and zoned times in NZ time', () => {
+    expect(fmtTime('2026-11-11T14:00:47.103')).toBe('11 Nov 14:00');
+    expect(fmtTime('2026-11-11T01:03:23.059867+00:00')).toBe('11 Nov 14:03');
+    expect(fmtTime('2026-06-11T01:03:23Z')).toBe('11 Jun 13:03');
+    expect(fmtTime(null)).toBe('—');
   });
 });

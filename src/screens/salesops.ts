@@ -1,5 +1,5 @@
 import { callUrl, SALES_OPS_URL, ApiError, J } from '../api.ts';
-import { h, mount, message, segmented, pinPad, nzTime } from '../ui.ts';
+import { h, mount, message, segmented, pinPad } from '../ui.ts';
 
 // Sales & Ops: managers only, on approved devices (checked by the portal-sales-ops function on
 // every request). The page always opens locked and asks for the PIN. It locks again after
@@ -76,7 +76,7 @@ export function renderSalesOps(d: J): HTMLElement[] {
     card('Channels', table(['Channel', 'Devices', 'Revenue', 'GP', 'GP %'],
       (d.channels || []).map((c: J) => [c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3])),
     card('Staff sales', table(['Staff', 'Devices', 'Revenue', 'GP', 'GP %'],
-      (d.staff || []).map((c: J) => [c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3])),
+      (d.staff || []).map((c: J) => [c.name === 'Unassigned' ? 'No salesperson' : c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3])),
     card('Returns',
       h('div', { class: 'kpis' },
         kpi('Returns', nz(r.count || 0), r.credits != null ? `${nz(r.credits)} credited` : undefined),
@@ -93,15 +93,23 @@ export function renderSalesOps(d: J): HTMLElement[] {
       h('p', { class: 'muted small' }, 'Top 5 by weeks of Ready For Sale cover, among models selling 2+ a week (weeks-of-cover scorecard; not affected by the period).'),
       table(['Model', '30 days', 'RFS', 'Wks', 'Action'],
         (d.lowStock || []).map((x: J) => [`${x.model}${x.gb ? ' ' + x.gb + 'GB' : ''}`, x.sold30d, x.rfs, x.wocRfs, x.action]), 1)),
-    h('p', { class: 'muted small so-foot' }, `${range} (NZ time). Sales data to ${fmtTime(d.freshness?.sales)} · returns to ${fmtTime(d.freshness?.returns)} · stock ${fmtTime(d.freshness?.stock)}. Sales are Cin7 lines counted in general sales; revenue and credits ex GST.`),
+    h('p', { class: 'muted small so-foot' }, `${range} (NZ time). Cin7 sales to ${fmtTime(d.freshness?.sales)} · returns to ${fmtTime(d.freshness?.returns)} · refreshed ${fmtTime(d.freshness?.cache)} (every 10 min) · stock ${fmtTime(d.freshness?.stock)}. Sales are Cin7 lines counted in general sales; revenue and credits ex GST. "No salesperson" is mostly website and marketplace orders.`),
   ];
 }
 
-function fmtTime(v?: string | null) {
+/** Timestamps with a zone are shown in NZ time; Cin7's zoneless ones are already NZ local time. */
+export function fmtTime(v?: string | null) {
   if (!v) return '—';
-  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : v + '+13:00'; // NZ local timestamps without zone
-  const t = Date.parse(iso);
-  return Number.isFinite(t) ? `${new Date(t).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short' })} ${nzTime(new Date(t).toISOString())}` : v;
+  const local = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(v);
+  if (local && !/([zZ]|[+-]\d\d:?\d\d)$/.test(v)) {
+    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(local[2]) - 1];
+    return `${Number(local[3])} ${month} ${local[4]}:${local[5]}`;
+  }
+  const t = Date.parse(v);
+  if (!Number.isFinite(t)) return v;
+  const parts = new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(t);
+  const get = (k: string) => parts.find(p => p.type === k)?.value || '';
+  return `${get('day')} ${get('month')} ${get('hour')}:${get('minute')}`;
 }
 
 export function salesOpsScreen(): HTMLElement {

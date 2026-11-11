@@ -137,3 +137,17 @@ The function does its own terminal and session auth. Secrets:
 - the Shipment Check SO and Delivered columns.
 
 It posts to the gateway's `sync.asn` action, authenticated by the `x-sync-token` header. The token's SHA-256 is stored in `portal_config.asn_sync_token_sha256`. To rotate it, generate a new token, update that hash and the `PORTAL_SYNC_TOKEN` script property.
+
+## Sales & Ops (managers, approved devices)
+
+A manager-only page, served by its own edge function `portal-sales-ops`. On every request the
+function checks the portal session, that the role is manager, and that the terminal is listed in
+`portal_config.dashboard_terminals`. The page asks for the PIN each time it's opened. It locks
+after 5 minutes without use, when you leave it, or when it detects a badge or barcode scan, and the
+server lets the PIN unlock lapse after 5 idle minutes. The nav link only appears where access is
+allowed. Devices are ticked under "Devices with access" at the bottom of the page.
+
+Data: `portal_sales_ops(period)` over a 31-day copy of `excel_sales` / `excel_returns`
+(`reporting_cache.portal_sales_ops_*`). The copy is refreshed every 10 minutes, 5am–11pm NZ, by
+`portal_sales_ops_refresh()`, because the views take 6–8 s each. Shipping completions, grading
+records and the weeks-of-cover scorecard are read live.

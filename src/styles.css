@@ -302,3 +302,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .so-periods .seg-btn { font-size: 0.85rem; }
   .so-card { padding: 12px; }
 }
+@media (max-width: 640px) {
+  /* Phones: no logo or name. Tabs wrap so every section is visible; Sign out stays at the end. */
+  .topbar { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; }
+  .topbar .brand, .topbar .who-name { display: none; }
+  .topbar .tabs { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; gap: 2px; }
+  .topbar .who { gap: 6px; }
+  .tab { padding: 6px 2px; min-height: 38px; font-size: 0.9rem; white-space: nowrap; text-align: center; }
+}
