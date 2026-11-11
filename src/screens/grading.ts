@@ -1,5 +1,6 @@
 import { auth, call, ApiError, uuid, J } from '../api.ts';
 import { deviceCodePanel } from './codechange.ts';
+import { testingPriorityCard } from './testingpriority.ts';
 import { h, mount, message, scanInput, segmented, askPin, busy, nzTime } from '../ui.ts';
 import {
   TESTS, DESTINATIONS, GradingForm, Grade, Destination, TestResult, emptyForm, formFromRecord, problems,
@@ -271,7 +272,9 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
   loadRecent();
   setTimeout(() => scan.focus());
 
-  return h('div', { class: 'layout-side' },
-    h('div', { class: 'stack' }, h('section', { class: 'card' }, h('h1', {}, 'Grading'), scan, status), work),
-    recent);
+  return h('div', { class: 'stack' },
+    testingPriorityCard(),
+    h('div', { class: 'layout-side' },
+      h('div', { class: 'stack' }, h('section', { class: 'card' }, h('h1', {}, 'Grading'), scan, status), work),
+      recent));
 }

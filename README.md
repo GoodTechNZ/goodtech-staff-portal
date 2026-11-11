@@ -27,13 +27,15 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
   - A manager can reset a PIN from the Dashboard; the person then sets a new one at next sign-in.
 - **PIN again** for sensitive actions:
   - Grading: changing an existing grading record.
-  - Shipping: manual IMEI override, or changing shipping settings.
+  - Shipping: changing shipping settings.
   - Sales: confirming payment received, or voiding an order.
   - Every staff/terminal admin action.
 - **Lockout.** 5 wrong PINs lock the person for 15 minutes; a manager can unlock them.
 - **Sign-out** happens only when someone taps Sign out, or after 5 minutes without activity. Refreshing the page keeps you signed in. The idle limit is enforced in the browser and on the server, and `portal-expire-sessions` sweeps abandoned sessions every 5 minutes. Finishing a device or order shows a confirmation and resets the screen for the next one; it doesn't sign anyone out.
 
 ## Grading
+
+**Testing priority** sits at the top of the tab (collapsible; remembers open/closed and the Urgent / Urgent + High / All filter). It is the "Daily testing priority" routine, live: untested devices in received SOs (ASNs rows with no grade whose SO has a Delivered date), ranked by Ready For Sale days of cover at the model's sales rate. Velocity = max(sold 30d ÷ 30, sold 90d ÷ 90 × 0.8); Urgent < 7 days, High < 14, Medium < 30, else Low; fewer than 4 sold in 30 days drops a tier; Test now = units to reach 21 days of cover, capped at the number waiting. Sales and stock come from `reporting_cache.portal_testing_demand`, refreshed hourly at :20 (5am–10pm NZ) by cron `portal-testing-demand` (`portal_testing_demand_refresh()`, ~60 s); the ranking itself is `portal_testing_priority()` (gateway `grading.priority`).
 
 Scan a serial/IMEI, grade it, record the 12 functional tests and the destination, then save. The tester
 and date always come from the signed-in session.
@@ -47,6 +49,11 @@ shows its grade and location instead of the grading form. Staff can then:
 
 The database refuses a second grading even if the screen is bypassed (`portal_grading_save`).
 Duplicate saves can be cancelled with `portal_grading_dismiss(record, reason)` (outbox status `dismissed`).
+
+
+## Shipping
+
+Scan the SO (or label tracking number), scan each device IMEI, print the label, then Ship. If an IMEI isn't in the grading records, the packer is asked to confirm the device in hand is the model sold (one button per product still to scan). Confirming records a `manual_not_found` verification in staff-shipping with an automatic reason, against the signed-in name; it shows as a shipping override in the daily summary flags. No PIN is needed. Wrong devices (IMEI maps to another SKU) still can't be overridden.
 
 ## Product-code changes (managers, PIN to confirm)
 

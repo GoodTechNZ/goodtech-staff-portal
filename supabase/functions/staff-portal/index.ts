@@ -144,6 +144,10 @@ async function grading(ctx: Ctx, action: string, b: J) {
     await log(ctx, 'grading', 'save', serial, 'linked', { grade, recordId, linkedRow, update: false, destination: found?.record?.destination ?? null });
     return { ok: true, linked: true, linkedRow, linkedTester: found?.record?.tester ?? null, ...found };
   }
+  if (action === 'priority') {
+    // Testing priority (the "Daily testing priority" routine): what to test first, for everyone.
+    return await rpc('portal_testing_priority');
+  }
   if (action === 'recent') {
     const rows = await rest('portal_grading_outbox?select=id,status,error,created_at,synced_at,linked_sheet_row,revision,payload,record:portal_grading_records!portal_grading_outbox_record_id_fkey(serial,sheet_row)'
       + '&owner_id=eq.' + encodeURIComponent(ctx.staff.id) + '&order=created_at.desc&limit=15');

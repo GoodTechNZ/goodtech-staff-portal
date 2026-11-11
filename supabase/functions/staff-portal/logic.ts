@@ -59,7 +59,7 @@ export function uuidOrNull(v: unknown): string | null {
 // Actions that need the PIN again even though the person is signed in.
 export function needsPin(module: string, action: string, body: J): boolean {
   if (module === 'grading' && action === 'save') return !!uuidOrNull(body.recordId);
-  if (module === 'shipping') return ['override', 'save_settings'].includes(action);
+  if (module === 'shipping') return action === 'save_settings';
   if (module === 'sales') return ['invoice', 'void'].includes(action);
   if (module === 'admin') return action !== 'staff' && action !== 'terminals';
   if (module === 'stock') return action === 'commit';

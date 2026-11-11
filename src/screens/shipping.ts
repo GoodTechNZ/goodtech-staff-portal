@@ -1,5 +1,5 @@
 import { call, ApiError, J } from '../api.ts';
-import { h, mount, message, scanInput, askPin, busy, confirmDialog } from '../ui.ts';
+import { h, mount, message, scanInput, busy, confirmDialog } from '../ui.ts';
 import type { ScreenCtx } from '../main.ts';
 
 // Shipping: scan the SO (or the label tracking number), scan each device IMEI, print the label,
@@ -11,6 +11,15 @@ type Key = { salesOrderNumber?: string; trackingNumber?: string };
 export function orderKey(scan: string): Key {
   const v = scan.trim().toUpperCase();
   return /^SO\d+$/.test(v) ? { salesOrderNumber: v } : { trackingNumber: scan.trim().replace(/\s+/g, '') };
+}
+
+/** Serial-tracked products on the order that still have devices to scan. */
+export function devicesToVerify(serialProducts: J[], scans: J[]): J[] {
+  return serialProducts.filter(p => scans.filter(s => s.scanned_sku === p.sku).length < Number(p.quantity || 0));
+}
+
+export function overrideReason(p: J): string {
+  return `IMEI not in grading records; packer checked the device and confirmed it matches the model sold: ${p.sku} (${p.name}).`.slice(0, 1000);
 }
 
 function openLabels(labels: string[]) {
@@ -65,26 +74,37 @@ export function shippingScreen(ctx: ScreenCtx): HTMLElement {
         const e = err as ApiError;
         imei.disabled = false; imei.value = ''; imei.focus();
         slot.replaceChildren(message('error', e.message || 'Scan failed.'));
-        if (e.data?.code === 'not_found' && e.data?.scanEvent?.id) slot.append(overrideForm(v, e.data.scanEvent.id));
+        if (e.data?.code === 'not_found' && e.data?.scanEvent?.id) confirmUnknown(v, e.data.scanEvent.id);
       }
     }
 
-    function overrideForm(v: string, scanEventId: string) {
-      const sku = h('select', {}, h('option', { value: '' }, 'Choose the product this device is'), serialProducts.map(p => h('option', { value: p.sku }, `${p.sku} — ${p.name}`)));
-      const reason = h('textarea', { rows: 2, placeholder: 'What did you check? (at least 10 characters)' });
-      const go = h('button', { type: 'button', class: 'btn btn-danger' }, 'Override with PIN');
-      go.addEventListener('click', async () => {
-        if (!sku.value || reason.value.trim().length < 10) { slot.append(message('error', 'Choose the product and explain the manual check.')); return; }
-        const pin = await askPin('Manual IMEI override', 'This is recorded against your name and shown to managers.');
-        if (!pin) return;
-        await busy(go, async () => {
-          try {
-            const r = await call('shipping.override', { ...key, imei: v, scanEventId, claimedSku: sku.value, overrideReason: reason.value.trim(), pin });
-            render({ ...d, ...r }, message('warn', `Override recorded for ${v}.`));
-          } catch (err) { slot.append(message('error', (err as Error).message)); }
-        });
+    // IMEI not in the grading records: ask the packer to confirm the device in hand is the model
+    // sold, then record it as a manual override (audited against their name) so the order can ship.
+    function confirmUnknown(v: string, scanEventId: string) {
+      const options = devicesToVerify(serialProducts, scans);
+      if (!options.length) { slot.append(message('error', 'All devices on this order are already verified.')); return; }
+      const close = () => { overlay.remove(); imei.focus(); };
+      const pick = (p: J, button: HTMLButtonElement) => busy(button, async () => {
+        try {
+          const r = await call('shipping.override', { ...key, imei: v, scanEventId, claimedSku: p.sku, overrideReason: overrideReason(p) });
+          overlay.remove();
+          render({ ...d, ...r }, message('warn', `${v} confirmed by you as ${p.name} (not in grading records).`));
+        } catch (err) { overlay.remove(); slot.append(message('error', (err as Error).message)); }
       });
-      return h('div', { class: 'card stack' }, h('strong', {}, 'Device not in grading records'), h('p', { class: 'muted small' }, 'Only override after physically checking the model, storage and colour against the order.'), sku, reason, h('div', { class: 'row end' }, go));
+      const overlay = h('div', { class: 'overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Confirm unknown device' },
+        h('div', { class: 'dialog stack' },
+          h('h2', {}, 'Device not in grading records'),
+          h('p', {}, 'IMEI ', h('span', { class: 'mono' }, v), ' isn’t in the grading records. Check the device in your hand against what was sold — model, storage and colour.'),
+          h('p', { class: 'muted small' }, 'Confirming is recorded against your name and shown to managers.'),
+          options.map(p => {
+            const b = h('button', { type: 'button', class: 'btn btn-primary btn-lg confirm-model' }, `Yes, it’s the ${p.name}`, h('span', { class: 'muted small mono' }, ` ${p.sku}`));
+            b.onclick = () => pick(p, b);
+            return b;
+          }),
+          h('div', { class: 'row end' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: close }, 'No — rescan'))));
+      overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+      document.body.appendChild(overlay);
+      (overlay.querySelector('.confirm-model') as HTMLElement | null)?.focus();
     }
 
     async function act(action: 'print' | 'ship' | 'pickup_ready' | 'collect', button: HTMLButtonElement) {
@@ -135,7 +155,7 @@ export function shippingScreen(ctx: ScreenCtx): HTMLElement {
             const got = scans.filter(s => s.scanned_sku === p.sku);
             const serial = serialProducts.includes(p);
             return h('tr', {}, h('td', {}, p.name, h('span', { class: 'muted small mono' }, p.sku)), h('td', { class: 'num' }, p.quantity),
-              h('td', {}, serial ? (got.length ? got.map(s => h('div', { class: 'mono small' }, s.scanned_imei, s.validation_method === 'manual_not_found' ? ' (override)' : '')) : h('span', { class: 'muted' }, `0 of ${p.quantity}`)) : h('span', { class: 'muted' }, 'No serial needed')));
+              h('td', {}, serial ? (got.length ? got.map(s => h('div', { class: 'mono small' }, s.scanned_imei, s.validation_method === 'manual_not_found' ? ' (confirmed manually)' : '')) : h('span', { class: 'muted' }, `0 of ${p.quantity}`)) : h('span', { class: 'muted' }, 'No serial needed')));
           })))),
         needed ? h('div', { class: 'field' }, h('span', { class: 'label' }, `Devices verified ${scans.length} of ${needed}`), imei) : message('info', 'No devices to scan on this order.'),
         slot,

@@ -34,7 +34,8 @@ describe('needsPin', () => {
     expect(needsPin('grading', 'save', { recordId: '6ca9a746-6aeb-406d-9c7f-27ee24aed081' })).toBe(true);
     expect(needsPin('grading', 'link', { recordId: '6ca9a746-6aeb-406d-9c7f-27ee24aed081' })).toBe(false);
     expect(needsPin('shipping', 'scan', {})).toBe(false);
-    expect(needsPin('shipping', 'override', {})).toBe(true);
+    expect(needsPin('shipping', 'override', {})).toBe(false);
+    expect(needsPin('shipping', 'save_settings', {})).toBe(true);
     expect(needsPin('sales', 'invoice', {})).toBe(true);
     expect(needsPin('sales', 'void', {})).toBe(true);
     expect(needsPin('sales', 'create', {})).toBe(false);

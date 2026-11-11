@@ -310,3 +310,33 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .topbar .who { gap: 6px; }
   .tab { padding: 6px 2px; min-height: 38px; font-size: 0.9rem; white-space: nowrap; text-align: center; }
 }
+
+/* Testing priority (top of Grading) */
+.tp-card > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 6px; }
+.tp-card > summary::-webkit-details-marker { display: none; }
+.tp-card > summary::before { content: '▸'; color: var(--muted); }
+.tp-card[open] > summary::before { content: '▾'; }
+.tp-title { font-weight: 700; font-size: 1.1rem; }
+.tp-card[open] > summary { margin-bottom: 10px; }
+.tp-summary { margin: 0; }
+.tp-tier.tp-1 { color: var(--danger); font-weight: 600; }
+.tp-tier.tp-2 { color: #b26a00; font-weight: 600; }
+.tp-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: #9aa0a6; vertical-align: middle; }
+.tp-1 .tp-dot { background: var(--danger); }
+.tp-2 .tp-dot { background: #e0a100; }
+.tp-3 .tp-dot { background: #5b8def; }
+.tp-sos-inline { display: none; }
+@media (max-width: 480px) { .tp-sos-inline { display: block; } }
+
+/* Desktop: tabs centred in the header, above the page content. */
+@media (min-width: 641px) {
+  .topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
+  .topbar .tabs { flex: none; justify-content: center; }
+  .topbar .who { justify-self: end; }
+}
+
+/* Unknown-IMEI confirm (Shipping): long product names wrap inside the dialog on phones. */
+.dialog { min-width: 0; }
+.dialog .confirm-model { white-space: normal; flex-direction: column; gap: 2px; line-height: 1.25; }
+.dialog .confirm-model .muted { color: inherit; opacity: 0.8; }
+@media (max-width: 480px) { .tp-table .tp-opt { display: none; } }
