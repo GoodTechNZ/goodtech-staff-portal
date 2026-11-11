@@ -1,5 +1,5 @@
 import {cin7,lineSignature,shipRequest} from './shipping-orders.ts';
-import {gql,deliveryMethod} from './shopify-shipping.ts';
+import {gql,deliveryMethod,loadShopifyOrder} from './shopify-shipping.ts';
 type J=Record<string,any>;
 export const READY_QUERY='mutation ReadyForPickup($input:FulfillmentOrderLineItemsPreparedForPickupInput!){fulfillmentOrderLineItemsPreparedForPickup(input:$input){userErrors{field message}}}';
 export const COLLECT_QUERY='mutation CollectOrder($fulfillment:FulfillmentInput!){fulfillmentCreate(fulfillment:$fulfillment){fulfillment{id status} userErrors{field message}}}';
@@ -44,6 +44,39 @@ export function assertReadySnapshot(state:J,order:J,scans:J[],plan:J){
  if(!Array.isArray(state.serials)||signature(state.serials)!==signature(serialSnapshot(scans)))throw new Error('Verified devices changed after preparation. Review the pickup before collection.');
  if(state.fulfillment_order_id!==plan.id||state.location_id!==plan.locationId)throw new Error('Pickup fulfilment or location changed after preparation. Review the pickup in Shopify before collection.');
 }
+// The Shopify order is already fully fulfilled (e.g. by the Cin7 sync) with exactly this order's items:
+// returns the fulfilment ID, else null. Anything partial or different stays for review.
+export function fulfilledFor(o:J,sh:J):string|null{
+ const open=(o.fulfillmentOrders?.nodes||[]).filter((f:J)=>f.status!=='CANCELLED');
+ if(!open.length||open.some((f:J)=>f.lineItems?.pageInfo?.hasNextPage||(f.lineItems?.nodes||[]).some((l:J)=>Number(l.remainingQuantity)>0)))return null;
+ const done=(o.fulfillments||[]).filter((f:J)=>f.status==='SUCCESS');
+ if(!done.length||done.some((f:J)=>f.fulfillmentLineItems?.pageInfo?.hasNextPage))return null;
+ const items=done.flatMap((f:J)=>(f.fulfillmentLineItems?.nodes||[]).map((l:J)=>({sku:l.lineItem?.sku,quantity:l.quantity})));
+ try{if(lineSignature(items)!==lineSignature(sh.line_items))return null;}catch{return null;}
+ return done[done.length-1].id;
+}
+async function collectedInShopify(sh:J){return fulfilledFor(await loadShopifyOrder(sh.order_name),sh);}
+async function recordCollected(db:any,order:J,scans:J[],staff:string,fulfillmentId:string){
+ const sh=order.shipment,id=order.local.cin7_sale_id;
+ checked(await db.from('staff_pickup_orders').update({fulfillment_id:fulfillmentId}).eq('cin7_sale_id',id));
+ for(const scan of scans){
+  checked(await db.from('imei_lifecycle_events').insert({imei:scan.scanned_imei,event_type:'SHIPPED',event_at:new Date().toISOString(),sku:scan.scanned_sku,order_reference:sh.order_name,cin7_sale_id:id,tracking_number:null,source:'staff_shipping',source_reference:'pickup:'+id+':'+scan.scanned_imei,staff,status:'OUTBOUND',details:{delivery_method:'pickup',cin7_order_number:order.local.order_number,collected:true}}));
+ }
+ if(scans.length)checked(await db.from('staff_shipping_verifications').update({cin7_shipped:true,cin7_imei_written:true,cin7_completed_at:new Date().toISOString(),notification_status:'pickup_collected'}).in('id',scans.map(s=>s.id)));
+ checked(await db.from('staff_pickup_orders').update({collect_status:'collected',collected_at:new Date().toISOString(),last_error:null}).eq('cin7_sale_id',id));
+}
+// A collection left for review after Cin7 shipped it, typically because the Cin7 sync fulfilled the
+// Shopify order before the portal's own request: once Shopify is fully fulfilled with exactly this
+// order's items, record the collection (by whoever pressed Mark collected). Runs when the SO is looked up.
+export async function finishStuckCollection(db:any,order:J,o:J,state:J){
+ if(state?.collect_status!=='review_required'||!state.cin7_completed)return false;
+ const fid=fulfilledFor(o,order.shipment);
+ if(!fid)return false;
+ const scans=checked(await db.from('staff_shipping_verifications').select('*').eq('cin7_sale_id',order.local.cin7_sale_id).eq('verified',true));
+ await recordCollected(db,order,scans,state.collected_by||'Staff',fid);
+ checked(await db.from('staff_pickup_orders').update({last_error:'Completed on lookup: Shopify was already fulfilled (Cin7 sync).'}).eq('cin7_sale_id',order.local.cin7_sale_id));
+ return true;
+}
 export async function processPickup(db:any,action:string,order:J,o:J,scans:J[],staff:string){
  const sh=order.shipment,id=order.local.cin7_sale_id;
  let state=await pickupState(db,id);
@@ -81,16 +114,21 @@ export async function processPickup(db:any,action:string,order:J,o:J,scans:J[],s
   const verify=await cin7('/Sale/Fulfilment/Ship?TaskID='+encodeURIComponent(task));
   if(verify.Status!=='AUTHORISED'||!verify.Lines?.length||verify.Lines.some((l:J)=>!l.IsShipped||l.TrackingNumber||l.Carrier!=='1a Elgin Street')||verify.ShippingAddress?.Line1!=='1a Elgin Street'||!String(verify.ShippingNotes).includes(marker))throw new Error('Cin7 did not confirm collection. Review the order before retrying.');
   checked(await db.from('staff_pickup_orders').update({cin7_completed:true}).eq('cin7_sale_id',id));
-  // notifyCustomer:false prevents Shopify's shipping confirmation email for an in-store handover.
-  const p=await gql(COLLECT_QUERY,{fulfillment:{notifyCustomer:false,lineItemsByFulfillmentOrder:plan.items}});
-  const f=p.data?.fulfillmentCreate;
-  if(!f?.fulfillment?.id||f.fulfillment.status!=='SUCCESS'||f.userErrors?.length)throw new Error(f?.userErrors?.map((e:J)=>e.message).join('; ')||'Shopify did not confirm collection fulfilment.');
-  checked(await db.from('staff_pickup_orders').update({fulfillment_id:f.fulfillment.id}).eq('cin7_sale_id',id));
-  for(const scan of scans){
-   checked(await db.from('imei_lifecycle_events').insert({imei:scan.scanned_imei,event_type:'SHIPPED',event_at:new Date().toISOString(),sku:scan.scanned_sku,order_reference:sh.order_name,cin7_sale_id:id,tracking_number:null,source:'staff_shipping',source_reference:'pickup:'+id+':'+scan.scanned_imei,staff,status:'OUTBOUND',details:{delivery_method:'pickup',cin7_order_number:order.local.order_number,collected:true}}));
+  // Cin7's Shopify integration usually fulfils the Shopify order itself within seconds of the Cin7
+  // shipment above. Adopt that fulfilment when it already covers every item; only create one when
+  // Shopify still has items open (and check again if Shopify rejects ours because Cin7 got there first).
+  let fulfillmentId=await collectedInShopify(sh);
+  if(!fulfillmentId){
+   // notifyCustomer:false prevents Shopify's shipping confirmation email for an in-store handover.
+   const p=await gql(COLLECT_QUERY,{fulfillment:{notifyCustomer:false,lineItemsByFulfillmentOrder:plan.items}});
+   const f=p.data?.fulfillmentCreate;
+   if(f?.fulfillment?.id&&f.fulfillment.status==='SUCCESS'&&!f.userErrors?.length)fulfillmentId=f.fulfillment.id;
+   else{
+    fulfillmentId=await collectedInShopify(sh);
+    if(!fulfillmentId)throw new Error(f?.userErrors?.map((e:J)=>e.message).join('; ')||'Shopify did not confirm collection fulfilment.');
+   }
   }
-  if(scans.length)checked(await db.from('staff_shipping_verifications').update({cin7_shipped:true,cin7_imei_written:true,cin7_completed_at:new Date().toISOString(),notification_status:'pickup_collected'}).in('id',scans.map(s=>s.id)));
-  checked(await db.from('staff_pickup_orders').update({collect_status:'collected',collected_at:new Date().toISOString(),last_error:null}).eq('cin7_sale_id',id));
+  await recordCollected(db,order,scans,staff,fulfillmentId);
   return {stage:'collected',note:'Collection recorded in Cin7 and Shopify. No shipping email was sent.'};
  }catch(e){await db.from('staff_pickup_orders').update({collect_status:'review_required',last_error:String(e).slice(0,1000)}).eq('cin7_sale_id',id);throw new Error('Collection needs review: '+(e instanceof Error?e.message:String(e)));}
 }

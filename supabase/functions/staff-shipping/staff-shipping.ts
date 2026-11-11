@@ -1,5 +1,5 @@
 import {auditShipping,latestScan,scanBlock,validateSaved,errorReview} from './shipping-validation.ts';
-import {pickupState,processPickup} from './pickup-orders.ts';
+import {pickupState,processPickup,finishStuckCollection} from './pickup-orders.ts';
 import {shippingSettings,saveShippingSettings} from './shipping-settings.ts';
 import {loadShopifyOrder,notificationPlan,notifyShopify,deliveryMethod} from "./shopify-shipping.ts";
 import {getSalesOrder,printOrderLabel,lineSignature,cin7,shipRequest,writeSerialSaleNote,appendVerifiedSerials} from "./shipping-orders.ts";
@@ -86,6 +86,12 @@ export default {fetch:withSupabase({auth:"none"},async(req,ctx)=>{
     const sh=order?.shipment||await getShipment(db,normTracking(b.trackingNumber),action==='ship');
     if(order)sh.cin7_sale_id=order.local.cin7_sale_id;
     const shopifyLinked=order?sh.shopify_linked:/^#\d+$/.test(String(sh.order_name));
+    // A pickup left at "Collection needs review" after Cin7 shipped it (the Cin7 sync fulfilled Shopify
+    // first): finish recording it once Shopify shows it fully fulfilled. Cin7 then shows it as completed.
+    if(order&&sh.shopify_linked){
+      const stuck=await pickupState(db,order.local.cin7_sale_id);
+      if(stuck?.collect_status==='review_required'&&stuck.cin7_completed)await finishStuckCollection(db,order,shopifyOrder||await loadShopifyOrder(sh.order_name),stuck);
+    }
     if(sh.read_only&&action!=='lookup')throw new Error(sh.status_message+' Refresh to view the confirmed status. Further shipping actions are disabled.');
     const isPickup=sh.delivery_method==='pickup';
     if(isPickup){
