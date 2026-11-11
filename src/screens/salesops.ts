@@ -64,14 +64,18 @@ export function renderSalesOps(d: J): HTMLElement[] {
   const s = d.sales || {}, r = d.returns || {};
   const range = d.from === d.to ? d.from : `${d.from} – ${d.to}`;
   return [
-    card('Sales',
+    card('Sales (net of returns)',
       h('div', { class: 'kpis' },
-        kpi('Devices sold', nz(s.deviceUnits || 0), s.otherUnits ? `+ ${nz(s.otherUnits)} accessories & other` : undefined),
-        kpi('Revenue ex GST', dollars(s.revenue)),
+        kpi('Devices sold', nz(s.deviceUnits || 0), s.returnedDevices ? `${nz(s.grossDeviceUnits || 0)} sold − ${nz(s.returnedDevices)} returned` : (s.otherUnits ? `+ ${nz(s.otherUnits)} accessories & other` : undefined)),
+        kpi('Revenue ex GST', dollars(s.revenue), s.returnedCredit ? `${dollars(s.grossRevenue)} − ${dollars(s.returnedCredit)} credited` : undefined),
         kpi('GP', dollars(s.gp)),
         kpi('GP %', pct(s.gpPct))),
-      s.revenueWithoutCost ? h('p', { class: 'muted small' }, `GP % excludes ${dollars(s.revenueWithoutCost)} of sales with no cost recorded (mostly repairs).`) : null),
-    card('Top 10 models', table(['Model', 'Units', 'Revenue', 'GP', 'GP %'],
+      h('p', { class: 'muted small' }, [
+        'Returns credited in the period come off units, revenue and GP (returned items back at their Cin7 average cost); models, channels and staff below are net too.',
+        s.returnedDevices && s.otherUnits ? ` Accessories & other: ${nz(s.otherUnits)} net.` : '',
+        s.revenueWithoutCost ? ` GP % excludes ${dollars(s.revenueWithoutCost)} of sales with no cost recorded (mostly repairs).` : '',
+      ].join(''))),
+    card('Top 10 models', table(['Model', 'Net units', 'Revenue', 'GP', 'GP %'],
       (d.topModels || []).map((m: J) => [m.model, m.units, dollars(m.revenue), dollars(m.gp), pct(m.gpPct)]), 1, [3])),
     card('Channels', table(['Channel', 'Devices', 'Revenue', 'GP', 'GP %'],
       (d.channels || []).map((c: J) => [c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3])),
@@ -81,7 +85,7 @@ export function renderSalesOps(d: J): HTMLElement[] {
       h('div', { class: 'kpis' },
         kpi('Returns', nz(r.count || 0), r.credits != null ? `${nz(r.credits)} credited` : undefined),
         kpi('Credit ex GST', dollars(r.creditValue)),
-        kpi('Return rate', pct(r.rate), `${nz(r.deviceReturns || 0)} devices vs ${nz(s.deviceUnits || 0)} sold`)),
+        kpi('Return rate', pct(r.rate), `${nz(r.deviceReturns || 0)} devices vs ${nz(s.grossDeviceUnits ?? s.deviceUnits ?? 0)} sold`)),
       table(['Top reasons', 'Count'], (r.reasons || []).map((x: J) => [x.reason, x.count]))),
     card('Orders shipped',
       h('div', { class: 'kpis' }, kpi('Orders', nz(d.shipped?.orders || 0)), kpi('Devices', nz(d.shipped?.devices || 0))),

@@ -31,7 +31,7 @@ describe('formatting', () => {
 describe('renderSalesOps', () => {
   const data = {
     period: '7d', from: '2026-11-05', to: '2026-11-11',
-    sales: { deviceUnits: 210, otherUnits: 95, revenue: 125000.5, gp: 31000, gpPct: 25.1, revenueWithoutCost: 900 },
+    sales: { deviceUnits: 210, otherUnits: 95, revenue: 125000.5, gp: 31000, gpPct: 25.1, revenueWithoutCost: 900, grossDeviceUnits: 218, returnedDevices: 8, grossRevenue: 129300.5, returnedCredit: 4300 },
     topModels: [{ model: 'iPhone 13 128GB', units: 19, revenue: 11000, gp: 2900, gpPct: 26.4 }],
     channels: [{ name: 'Website', units: 120, revenue: 80000, gp: 20000, gpPct: 25 }],
     staff: [{ name: 'Crystal', units: 40, revenue: 20000, gp: 5000, gpPct: 25 }],
@@ -50,7 +50,10 @@ describe('renderSalesOps', () => {
     expect(text).toContain('25.1%');
     expect(text).toContain('iPhone 13 128GB');
     expect(text).toContain('3.8%');
-    expect(text).toContain('8 devices vs 210 sold');
+    expect(text).toContain('Sales (net of returns)');
+    expect(text).toContain('218 sold − 8 returned');
+    expect(text).toContain('$129,301 − $4,300 credited');
+    expect(text).toContain('8 devices vs 218 sold');
     expect(text).toContain('iPhone SE (3rd Gen) 64GB');
     expect(text).toContain('2026-11-05 – 2026-11-11');
   });

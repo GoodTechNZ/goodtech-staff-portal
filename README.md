@@ -149,6 +149,11 @@ allowed. Devices are ticked under "Devices with access" at the bottom of the pag
 
 Periods: Today, Yesterday, and 7 or 30 full days ending yesterday (NZ time; today is not included).
 
+Sales are net of returns. Returns credited in the period (by credit date) come off units, revenue
+and GP. A returned item goes back into stock at its current Cin7 average cost; an accessory with no
+cost gives back its whole credit. Models, channels and staff are net too. The return rate compares
+device returns with gross devices sold.
+
 Data: `portal_sales_ops(period)` over a 31-day copy of `excel_sales` / `excel_returns`
 (`reporting_cache.portal_sales_ops_*`). The copy is refreshed every 10 minutes, 5am–11pm NZ, by
 `portal_sales_ops_refresh()`, because the views take 6–8 s each. Shipping completions, grading
