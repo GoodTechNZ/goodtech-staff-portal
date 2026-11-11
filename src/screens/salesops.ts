@@ -16,6 +16,16 @@ export async function salesOpsAvailable(): Promise<boolean> {
   try { return (await ops<{ allowed: boolean }>('access')).allowed === true; } catch { return false; }
 }
 
+/** Minutes as a short duration: 14 min, 2 h 15 m, 1 d 3 h. */
+export function duration(min: number | null | undefined) {
+  if (min == null || !Number.isFinite(Number(min))) return '—';
+  const m = Math.round(Number(min));
+  if (m < 60) return `${m} min`;
+  if (m < 24 * 60) return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} m` : ''}`;
+  const h = Math.round(m / 60);
+  return `${Math.floor(h / 24)} d${h % 24 ? ` ${h % 24} h` : ''}`;
+}
+
 const nz = (n: number, d = 0) => new Intl.NumberFormat('en-NZ', { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
 export const dollars = (n: number | null | undefined) => n == null ? '—' : (n < 0 ? '−$' : '$') + nz(Math.abs(Number(n)));
 export const pct = (n: number | null | undefined) => n == null ? '—' : nz(Number(n), 1) + '%';
@@ -64,6 +74,7 @@ export function renderSalesOps(d: J): HTMLElement[] {
         kpi('Credit ex GST', dollars(r.creditValue)),
         kpi('Return rate', pct(r.rate), `${nz(r.deviceReturns || 0)} devices vs ${nz(s.grossDeviceUnits ?? s.deviceUnits ?? 0)} sold`)),
       table(['Top reasons', 'Count'], (r.reasons || []).map((x: J) => [x.reason, x.count]))),
+    emailCard(d.email),
     card('Orders shipped',
       h('div', { class: 'kpis' }, kpi('Orders', nz(d.shipped?.orders || 0)), kpi('Devices', nz(d.shipped?.devices || 0))),
       table(['Staff', 'Orders', 'Devices'], (d.shipped?.staff || []).map((x: J) => [x.name, x.orders, x.devices]))),
@@ -76,6 +87,20 @@ export function renderSalesOps(d: J): HTMLElement[] {
         (d.lowStock || []).map((x: J) => [`${x.model}${x.gb ? ' ' + x.gb + 'GB' : ''}`, x.sold30d, x.rfs, x.wocRfs, x.action]), 1)),
     h('p', { class: 'muted small so-foot' }, `${range} (NZ time). Cin7 sales to ${fmtTime(d.freshness?.sales)} · returns to ${fmtTime(d.freshness?.returns)} · refreshed ${fmtTime(d.freshness?.cache)} (every 10 min) · stock ${fmtTime(d.freshness?.stock)}. Sales are Cin7 lines counted in general sales; revenue and credits ex GST. "No salesperson" is mostly website and marketplace orders.`),
   ];
+}
+
+/** Email: replies sent in the period by staff, and customer threads open now. */
+function emailCard(e: J = {}) {
+  const o = e.open || {};
+  return card('Email',
+    h('div', { class: 'kpis' },
+      kpi('Replies sent', nz(e.replies || 0), `${nz(e.threads || 0)} conversations`),
+      kpi('Median first reply', duration(e.medianMinutes)),
+      kpi('Open now', nz(o.total || 0), `${nz(o.under24h || 0)} under 24 h · ${nz(o.days1to3 || 0)} 1–3 days · ${nz(o.days3to14 || 0)} 3–14 days`)),
+    table(['Replied by', 'Replies', 'Conversations', 'Median first reply'],
+      (e.staff || []).map((x: J) => [x.name === 'Unsigned' ? 'Not signed' : x.name, x.replies, x.threads, duration(x.medianMinutes)]), 1, [2]),
+    (e.longestWaiting || []).length ? table(['Waiting longest', 'Waiting'], e.longestWaiting.map((x: J) => [x.subject, duration(Number(x.hours) * 60)])) : null,
+    h('p', { class: 'muted small' }, `Replies are counted in the period; open is now (last message from the customer, unanswered). Open counts customer emails only: people we've replied to before or personal addresses (Gmail, Hotmail, iCloud…). Left out: ${nz(o.otherSenders || 0)} from suppliers, marketing and notifications, and ${nz(o.older || 0)} customer threads waiting over 14 days. Mailbox synced ${fmtTime(e.syncedAt)}.`));
 }
 
 /** Timestamps with a zone are shown in NZ time; Cin7's zoneless ones are already NZ local time. */

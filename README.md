@@ -154,6 +154,14 @@ and GP. A returned item goes back into stock at its current Cin7 average cost; a
 cost gives back its whole credit. Models, channels and staff are net too. The return rate compares
 device returns with gross devices sold.
 
+Email (`portal_sales_ops_email`, read live from the service mailbox sync):
+- Replies sent in the period, by staff (by email sign-off), with conversations answered and median
+  first-reply time.
+- Customer threads open now: the last message is from the customer and unanswered, grouped by age.
+  Only people we've replied to before, or personal addresses (Gmail, Hotmail, iCloud…), are counted,
+  so supplier stock lists, marketing and notifications are left out. Threads waiting over 14 days are
+  counted separately.
+
 Data: `portal_sales_ops(period)` over a 31-day copy of `excel_sales` / `excel_returns`
 (`reporting_cache.portal_sales_ops_*`). The copy is refreshed every 10 minutes, 5am–11pm NZ, by
 `portal_sales_ops_refresh()`, because the views take 6–8 s each. Shipping completions, grading
