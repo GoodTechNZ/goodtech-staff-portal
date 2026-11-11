@@ -161,6 +161,8 @@ and GP. A returned item goes back into stock at its current Cin7 average cost; a
 cost gives back its whole credit. Models, channels and staff are net too. The return rate compares
 device returns with gross devices sold.
 
+Sales type: Online (Shopify: website, Reebelo, Trade Me), In-store sales (in-store devices and accessories), Repairs (Repairs sales group or rep), Replacement and Warranty (Cin7 sales rep), net of returns.
+
 Staff sales: lines with no salesperson are labelled **Shopify** when the order came through Shopify (website, Reebelo, Trade Me), otherwise by the Cin7 sales rep role (In-Store Sales, Replacement, Repairs, Warranty); anything left shows as "No salesperson". Returns have no source field, so blank-staff returns on Website/Reebelo/Trade Me count as Shopify.
 
 Email (`portal_sales_ops_email`, read live from the service mailbox sync):
