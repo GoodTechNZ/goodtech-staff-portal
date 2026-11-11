@@ -169,9 +169,11 @@ Email (`portal_sales_ops_email`, read live from the service mailbox sync):
 - Customer threads open now: the last message is from the customer and unanswered, grouped by age.
   Only people we've replied to before, or personal addresses (Gmail, Hotmail, iCloud…), are counted,
   so supplier stock lists, marketing and notifications are left out. Threads waiting over 14 days are
-  counted separately. A thread isn't open when the customer's last message only thanks us, says OK or
-  is an emoji reaction to a reply we already sent (`portal_email_is_closing`: no question mark and no
-  new ask such as please / can you / issue / return / swap / need / still). Those are shown as a count.
+  counted separately. After we've replied, a customer follow-up only keeps the thread open if it
+  needs an answer (`portal_email_is_closing`): a question mark, or a complaint/problem word (still not
+  working, refund, broken, faulty, wrong, missing, not received, error, urgent, disappointed, cancel…).
+  Thanks, OKs, emoji reactions and confirmations ("please proceed", "I'll bring it in") are left out
+  and shown as a count. Threads we haven't replied to are always counted.
 
 Data: `portal_sales_ops(period)` over a 31-day copy of `excel_sales` / `excel_returns`
 (`reporting_cache.portal_sales_ops_*`). The copy is refreshed every 10 minutes, 5am–11pm NZ, by

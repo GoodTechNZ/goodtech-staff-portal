@@ -100,7 +100,7 @@ function emailCard(e: J = {}) {
     table(['Replied by', 'Replies', 'Conversations', 'Median first reply'],
       (e.staff || []).map((x: J) => [x.name === 'Unsigned' ? 'Not signed' : x.name, x.replies, x.threads, duration(x.medianMinutes)]), 1, [2]),
     (e.longestWaiting || []).length ? table(['Waiting longest', 'Waiting'], e.longestWaiting.map((x: J) => [x.subject, duration(Number(x.hours) * 60)])) : null,
-    h('p', { class: 'muted small' }, `Replies are counted in the period; open is now (last message from the customer, unanswered). Open counts customer emails only: people we've replied to before or personal addresses (Gmail, Hotmail, iCloud…). Left out: ${nz(o.acknowledged || 0)} where the customer only thanked us or said OK after our reply, ${nz(o.otherSenders || 0)} from suppliers, marketing and notifications, and ${nz(o.older || 0)} customer threads waiting over 14 days. Mailbox synced ${fmtTime(e.syncedAt)}.`));
+    h('p', { class: 'muted small' }, `Replies are counted in the period; open is now (last message from the customer, unanswered). Open counts customer emails only: people we've replied to before or personal addresses (Gmail, Hotmail, iCloud…). Left out: ${nz(o.acknowledged || 0)} where the customer's follow-up to our reply needs no answer (thanks, OK, confirmations), ${nz(o.otherSenders || 0)} from suppliers, marketing and notifications, and ${nz(o.older || 0)} customer threads waiting over 14 days. Mailbox synced ${fmtTime(e.syncedAt)}.`));
 }
 
 /** Timestamps with a zone are shown in NZ time; Cin7's zoneless ones are already NZ local time. */
