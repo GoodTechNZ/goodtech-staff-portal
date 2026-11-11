@@ -14,7 +14,7 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
    ├─ Sales    → existing staff-sales-desk function (Cin7)
    ├─ Dashboard→ portal_ops_dashboard (orders, pick-ups, high alert, returns, Cin7 Repairs/Locked)
    │             + asn_ops_summary (received not tested, graded / repairs / locked not POed)
-   └─ Admin    → portal_daily_summary / portal_health, staff PINs and terminals
+   └─ Admin    → managers only (Fraser): portal_daily_summary / portal_health, staff PINs and terminals; hidden from other staff
 ```
 
 ## Staff sign-in

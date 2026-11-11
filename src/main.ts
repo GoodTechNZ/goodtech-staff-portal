@@ -34,7 +34,9 @@ let tab: TabId = (() => { try { const t = localStorage.getItem(TAB_KEY); return 
 let idle: IdleTimer | null = null;
 /** Sales & Ops access for the current session: null = not checked yet. */
 let salesOpsAllowed: boolean | null = null;
-const tabVisible = (id: TabId) => id !== 'salesops' || salesOpsAllowed === true;
+// Admin is for managers only (just Fraser); the server also refuses admin actions to anyone else.
+const tabVisible = (id: TabId) =>
+  id === 'salesops' ? salesOpsAllowed === true : id === 'admin' ? auth.staff?.role === 'manager' : true;
 let ticker: number | undefined;
 
 function stopIdle() { if (ticker) clearInterval(ticker); ticker = undefined; idle = null; }
