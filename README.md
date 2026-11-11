@@ -55,6 +55,10 @@ Duplicate saves can be cancelled with `portal_grading_dismiss(record, reason)` (
 
 Scan the SO (or label tracking number), scan each device IMEI, print the label, then Ship. Both scan boxes submit by themselves (no Enter needed) about 0.15 s after a barcode scan, detected by scanner-speed keystrokes (5+ characters under 35 ms apart on average). Anything typed or pasted by hand waits for Enter. If an IMEI isn't in the grading records, the packer is asked to confirm the device in hand is the model sold (one button per product still to scan). Confirming records a `manual_not_found` verification in staff-shipping with an automatic reason, against the signed-in name; it shows as a shipping override in the daily summary flags. No PIN is needed. Wrong devices (IMEI maps to another SKU) still can't be overridden.
 
+## Order links
+
+Cin7 SO numbers and Shopify order numbers (#39430) shown in the portal link to the order (new tab): SOs to `https://inventory.dearsystems.com/Sale#<sale id>~<sale id>~tabOrder`, # numbers to `https://admin.shopify.com/store/goodtech/orders/<order id>`. Used on the Dashboard order lists and pick results, the Shipping order header and the Sales order heading. `orderRef()` (src/orderlinks.ts) renders the number and one batched `dashboard.links` call (`portal_order_links`, from `cin7_sales_raw` and `shopify_orders`) fills in the links. Numbers that aren't found stay plain text. Supplier (HYLA) order numbers aren't linked.
+
 ## Product-code changes (managers, PIN to confirm)
 
 - **One device** (Grading → scan → *Change product code*): pick the new SKU (other grades are one tap)

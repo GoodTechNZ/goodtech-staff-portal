@@ -394,6 +394,11 @@ async function dashboard(ctx: Ctx, action: string, b: J) {
     ]);
     return { day, manager, people, health };
   }
+  if (action === 'links') {
+    // Cin7 / Shopify links for SO and # order numbers shown on any screen.
+    const refs = (Array.isArray(b.refs) ? b.refs : []).map((x: unknown) => String(x).trim().toUpperCase()).filter((x: string) => /^(SO\d{3,8}|#\d{3,8})$/.test(x)).slice(0, 300);
+    return { links: refs.length ? await rpc('portal_order_links', { p_refs: refs }) : {} };
+  }
   if (action === 'picklists') return { orders: await rpc('portal_new_order_pick_lists') };
   if (action === 'pick_confirm') {
     const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x)).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 10) as string[];

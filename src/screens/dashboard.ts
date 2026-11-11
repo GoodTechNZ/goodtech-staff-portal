@@ -1,5 +1,6 @@
 import { call, ApiError, J } from '../api.ts';
 import { h, mount, message, nzTime, busy } from '../ui.ts';
+import { orderRef } from '../orderlinks.ts';
 import type { ScreenCtx } from '../main.ts';
 
 // Operations at a glance: orders by stage, pick-ups, high alert, returns, testing, and Cin7
@@ -67,8 +68,8 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
   function docTable(rows: Doc[], extra?: (d: Doc) => string) {
     if (!rows.length) return h('p', { class: 'muted small' }, 'Nothing in this queue.');
     return h('table', { class: 'ops-table' }, h('tbody', {}, rows.map(d => h('tr', {},
-      h('td', { class: 'mono' }, d.document_number),
-      h('td', {}, d.party || '', d.reference && !/^Summary only/.test(d.reference) ? h('div', { class: 'muted small' }, d.reference) : null),
+      h('td', { class: 'mono' }, orderRef(d.document_number)),
+      h('td', {}, d.party || '', d.reference && !/^Summary only/.test(d.reference) ? h('div', { class: 'muted small' }, orderRef(d.reference)) : null),
       h('td', { class: 'num' }, shortDate(d.document_date), extra ? h('div', { class: 'muted small' }, extra(d)) : null)))));
   }
 
@@ -175,7 +176,7 @@ export function dashboardScreen(_ctx: ScreenCtx): HTMLElement {
       const num = (r: J) => r.number || orders.find(o => o.id === r.id)?.document_number || r.id;
       mount(pickPanel, h('section', { class: 'card stack' },
         message(bad.length ? 'warn' : 'ok', `${ok.length} order${ok.length === 1 ? '' : 's'} moved to Picked in Cin7${bad.length ? `; ${bad.length} need${bad.length === 1 ? 's' : ''} a look` : ''}.`),
-        bad.length ? h('ul', { class: 'small' }, bad.map(r => h('li', {}, h('strong', {}, num(r)), ' — ', r.error || 'Not updated.'))) : null,
+        bad.length ? h('ul', { class: 'small' }, bad.map(r => h('li', {}, h('strong', {}, orderRef(num(r))), ' — ', r.error || 'Not updated.'))) : null,
         h('div', { class: 'row end' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => mount(pickPanel) }, 'Close'))));
       load();
     }));

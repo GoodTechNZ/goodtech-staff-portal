@@ -340,3 +340,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dialog .confirm-model { white-space: normal; flex-direction: column; gap: 2px; line-height: 1.25; }
 .dialog .confirm-model .muted { color: inherit; opacity: 0.8; }
 @media (max-width: 480px) { .tp-table .tp-opt { display: none; } }
+
+/* Cin7 / Shopify order links */
+a.order-link { color: inherit; text-decoration: none; }
+a.order-link[href] { color: var(--brand-text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }

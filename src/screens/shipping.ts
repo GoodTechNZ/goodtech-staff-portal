@@ -1,5 +1,6 @@
 import { call, ApiError, J } from '../api.ts';
 import { h, mount, message, scanInput, busy, confirmDialog } from '../ui.ts';
+import { orderRef } from '../orderlinks.ts';
 import type { ScreenCtx } from '../main.ts';
 
 // Shipping: scan the SO (or the label tracking number), scan each device IMEI, print the label,
@@ -144,7 +145,7 @@ export function shippingScreen(ctx: ScreenCtx): HTMLElement {
     mount(work,
       h('section', { class: 'card stack' },
         h('div', { class: 'device-head' },
-          h('div', {}, h('h2', {}, sh.order_name || sh.cin7_order_number || 'Order'), h('div', { class: 'muted' }, [sh.cin7_order_number, sh.customer_name].filter(Boolean).join(' · '))),
+          h('div', {}, h('h2', {}, orderRef(sh.order_name || sh.cin7_order_number || 'Order')), h('div', { class: 'muted' }, sh.cin7_order_number && sh.order_name ? [orderRef(sh.cin7_order_number), sh.customer_name ? ' · ' + sh.customer_name : ''] : sh.customer_name || '')),
           h('span', { class: 'chip' }, pickup ? `Pickup · ${sh.fulfillment_status || ''}` : sh.fulfillment_status || '')),
         sh.shipping_address?.length && !pickup ? h('p', { class: 'muted small' }, sh.shipping_address.join(', ')) : null,
         sh.label_issue ? message('warn', sh.label_issue) : null,

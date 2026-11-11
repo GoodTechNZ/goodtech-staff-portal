@@ -1,5 +1,6 @@
 import { call, ApiError, uuid, J } from '../api.ts';
 import { h, mount, message, scanInput, askPin, busy, money, confirmDialog } from '../ui.ts';
+import { orderRef } from '../orderlinks.ts';
 import type { ScreenCtx } from '../main.ts';
 
 // In-store sales, driven by the existing staff-sales-desk function:
@@ -139,7 +140,7 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
     actions.unshift(step('get', 'Refresh', 'btn btn-ghost'));
 
     mount(root, h('section', { class: 'card stack' },
-      h('div', { class: 'device-head' }, h('div', {}, h('h1', {}, o.number), h('div', { class: 'muted' }, `${o.customer?.name || ''} · ${o.customer?.email || ''}`)), h('strong', {}, money(o.total))),
+      h('div', { class: 'device-head' }, h('div', {}, h('h1', {}, orderRef(o.number)), h('div', { class: 'muted' }, `${o.customer?.name || ''} · ${o.customer?.email || ''}`)), h('strong', {}, money(o.total))),
       o.stage === 'voided' ? h('span', { class: 'chip chip-voided' }, 'Voided') :
         h('div', { class: 'stages' }, STAGES.map((s, i) => h('span', { class: 'stage' + (i < stageIdx ? ' done' : i === stageIdx ? ' now' : '') }, STAGE_LABEL[s]))),
       h('table', {}, h('tbody', {}, (o.lines || []).map((l: J) => h('tr', {}, h('td', {}, l.name, h('span', { class: 'muted small mono' }, l.sku + (l.imei ? ' · ' + l.imei : ''))), h('td', { class: 'num' }, money(Number(l.price))))))),
