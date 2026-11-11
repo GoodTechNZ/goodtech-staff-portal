@@ -85,7 +85,7 @@ export function renderSalesOps(d: J): HTMLElement[] {
       h('p', { class: 'muted small' }, 'Top 5 by weeks of Ready For Sale cover, among models selling 2+ a week (weeks-of-cover scorecard; not affected by the period).'),
       table(['Model', '30 days', 'RFS', 'Wks', 'Action'],
         (d.lowStock || []).map((x: J) => [`${x.model}${x.gb ? ' ' + x.gb + 'GB' : ''}`, x.sold30d, x.rfs, x.wocRfs, x.action]), 1)),
-    h('p', { class: 'muted small so-foot' }, `${range} (NZ time). Cin7 sales to ${fmtTime(d.freshness?.sales)} · returns to ${fmtTime(d.freshness?.returns)} · refreshed ${fmtTime(d.freshness?.cache)} (every 10 min) · stock ${fmtTime(d.freshness?.stock)}. Sales are Cin7 lines counted in general sales; revenue and credits ex GST. "No salesperson" is mostly website and marketplace orders.`),
+    h('p', { class: 'muted small so-foot' }, `${range} (NZ time). Cin7 sales to ${fmtTime(d.freshness?.sales)} · returns to ${fmtTime(d.freshness?.returns)} · refreshed ${fmtTime(d.freshness?.cache)} (every 10 min) · stock ${fmtTime(d.freshness?.stock)}. Sales are Cin7 lines counted in general sales; revenue and credits ex GST. Sales with no salesperson show as Shopify (website, Reebelo and Trade Me orders) or their Cin7 sales rep role (In-Store Sales, Replacement, Repairs, Warranty).`),
   ];
 }
 
@@ -100,7 +100,7 @@ function emailCard(e: J = {}) {
     table(['Replied by', 'Replies', 'Conversations', 'Median first reply'],
       (e.staff || []).map((x: J) => [x.name === 'Unsigned' ? 'Not signed' : x.name, x.replies, x.threads, duration(x.medianMinutes)]), 1, [2]),
     (e.longestWaiting || []).length ? table(['Waiting longest', 'Waiting'], e.longestWaiting.map((x: J) => [x.subject, duration(Number(x.hours) * 60)])) : null,
-    h('p', { class: 'muted small' }, `Replies are counted in the period; open is now (last message from the customer, unanswered). Open counts customer emails only: people we've replied to before or personal addresses (Gmail, Hotmail, iCloud…). Left out: ${nz(o.otherSenders || 0)} from suppliers, marketing and notifications, and ${nz(o.older || 0)} customer threads waiting over 14 days. Mailbox synced ${fmtTime(e.syncedAt)}.`));
+    h('p', { class: 'muted small' }, `Replies are counted in the period; open is now (last message from the customer, unanswered). Open counts customer emails only: people we've replied to before or personal addresses (Gmail, Hotmail, iCloud…). Left out: ${nz(o.acknowledged || 0)} where the customer only thanked us or said OK after our reply, ${nz(o.otherSenders || 0)} from suppliers, marketing and notifications, and ${nz(o.older || 0)} customer threads waiting over 14 days. Mailbox synced ${fmtTime(e.syncedAt)}.`));
 }
 
 /** Timestamps with a zone are shown in NZ time; Cin7's zoneless ones are already NZ local time. */
