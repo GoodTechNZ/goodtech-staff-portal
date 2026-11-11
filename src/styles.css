@@ -346,3 +346,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Cin7 / Shopify order links */
 a.order-link { color: inherit; text-decoration: none; }
 a.order-link[href] { color: var(--brand-text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* Sales: add-ons offered under each device in the cart */
+.cart-line .addons { margin-top: 6px; gap: 6px; align-items: center; }

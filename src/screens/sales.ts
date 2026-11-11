@@ -6,10 +6,37 @@ import type { ScreenCtx } from '../main.ts';
 // In-store sales, driven by the existing staff-sales-desk function:
 // cart → create (Cin7 order + picking) → confirm payment (PIN, invoice) → complete purchase.
 
-type Product = { id: string; sku: string; name: string; price: number; available: number; serialRequired: boolean; imei?: string };
+type Product = { id: string; sku: string; name: string; price: number; available: number; serialRequired: boolean; imei?: string; model?: string };
 type Line = Product & { key: string; salePrice: number };
 const STAGES = ['draft', 'picking', 'invoiced', 'shipped'] as const;
 const STAGE_LABEL: Record<string, string> = { draft: 'Draft', picking: 'Picking', invoiced: 'Paid & invoiced', shipped: 'Handed over', voided: 'Voided' };
+
+const ADD_ONS: Record<string, string[]> = {
+  iphone: ['ACSCNPRFTPH', 'ACPHGELCASE', 'ACPHGELCASEMS', 'ACPHMSSLCASE'],
+  ipad: ['ACSCNPRFTPD'],
+  pixel: ['ACSCNPRFTGP', 'ACPHGELCASEGP'],
+  galaxy: ['ACPHGELCASESG', 'ACSCNPRFTSM'],
+};
+const MAGSAFE = ['ACPHGELCASEMS', 'ACPHMSSLCASE'];
+
+/** Add-ons that fit this device: by family (iPhone / iPad / Pixel / Galaxy phone); MagSafe cases only
+ * on iPhone 12 or newer and the Air (not SE or 16e); the Galaxy screen protector only on the S21–S24. */
+export function addOnsFor(device: { name: string; model?: string }, accessories: Product[]): Product[] {
+  const n = `${device.model || ''} ${device.name}`.toLowerCase();
+  const family = /\bipad\b/.test(n) ? 'ipad' : /\biphone\b/.test(n) ? 'iphone' : /\bpixel\b/.test(n) ? 'pixel'
+    : /\bgalaxy\b|\bsamsung\b/.test(n) && !/\btab\b/.test(n) ? 'galaxy' : '';
+  if (!family) return [];
+  // MagSafe: iPhone 12 and newer, and the iPhone Air; not the SE or the "e" models (16e).
+  const gen = n.match(/iphone\s*(\d{2})(e?)\b/);
+  const magsafe = /iphone air\b/.test(n) || (!!gen && Number(gen[1]) >= 12 && !gen[2] && !/\bse\b/.test(n));
+  return ADD_ONS[family].filter(sku =>
+    (!MAGSAFE.includes(sku) || magsafe) &&
+    (sku !== 'ACSCNPRFTSM' || /\bs2[1-4]\b/.test(n)))
+    .map(sku => accessories.find(a => a.sku === sku)).filter((a): a is Product => !!a);
+}
+
+export const addOnLabel = (a: Product): string =>
+  /screen protector/i.test(a.name) ? 'Screen protector' : /magsafe/i.test(a.name) ? (/silicone/i.test(a.name) ? 'MagSafe black silicone case' : 'MagSafe clear case') : /case/i.test(a.name) ? 'Clear gel case' : a.name;
 
 export function salesScreen(ctx: ScreenCtx): HTMLElement {
   const root = h('div', { class: 'stack' });
@@ -34,7 +61,7 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
     const slot = h('div', { class: 'status-slot' }, note || null);
     const results = h('div', { class: 'list' });
     const search = scanInput({
-      placeholder: 'Scan IMEI or search product code / model', label: 'Product search', onScan: async q => {
+      placeholder: 'Scan IMEI or search product code / model', label: 'Product search', auto: true, onScan: async q => {
         slot.replaceChildren();
         try {
           const r = await call<{ products: Product[] }>('sales.search', { q });
@@ -79,13 +106,16 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
       h('div', { class: 'layout-side' },
         h('div', { class: 'stack' },
           h('section', { class: 'card stack' }, h('h1', {}, 'Sales'), search, results,
-            accessories.length ? h('div', { class: 'row wrap' }, h('span', { class: 'label' }, 'Add-ons'), accessories.map(a => h('button', { type: 'button', class: 'btn btn-sm', onclick: () => add(a) }, `${a.name.replace(/^.*?(screen protector|case)/i, '$1')} ${money(a.price)}`))) : null),
+),
           h('section', { class: 'card stack' }, h('h2', {}, 'Cart'),
             lines.length ? lines.map(l => {
               const price = h('input', { type: 'number', min: '0', step: '0.01', value: String(l.salePrice), 'aria-label': `Price for ${l.sku}` });
               price.addEventListener('input', () => { l.salePrice = Math.round(Number(price.value || 0) * 100) / 100; requestId = uuid(); totalEl.textContent = money(total()); });
+              const extras = l.serialRequired ? addOnsFor(l, accessories) : [];
               return h('div', { class: 'cart-line' },
-                h('div', {}, h('div', {}, l.name), h('div', { class: 'muted small mono' }, l.sku, l.imei ? ' · ' + l.imei : ''), l.salePrice < l.price ? h('div', { class: 'small', style: { color: 'var(--warn)' } }, `Below catalogue ${money(l.price)}`) : null),
+                h('div', {}, h('div', {}, l.name), h('div', { class: 'muted small mono' }, l.sku, l.imei ? ' · ' + l.imei : ''), l.salePrice < l.price ? h('div', { class: 'small', style: { color: 'var(--warn)' } }, `Below catalogue ${money(l.price)}`) : null,
+                  extras.length ? h('div', { class: 'row wrap addons' }, h('span', { class: 'muted small' }, 'Add:'),
+                    extras.map(a => h('button', { type: 'button', class: 'btn btn-sm', onclick: () => add(a) }, `${addOnLabel(a)} ${money(a.price)}`))) : null),
                 price,
                 h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'aria-label': `Remove ${l.sku}`, onclick: () => { lines = lines.filter(x => x !== l); requestId = uuid(); cartView(); } }, 'Remove'));
             }) : h('p', { class: 'muted' }, 'Scan a device or search for a product.'),
