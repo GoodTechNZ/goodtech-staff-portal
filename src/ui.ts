@@ -35,18 +35,45 @@ export function message(kind: 'error' | 'ok' | 'info' | 'warn', text: string) {
 }
 
 /** Text input that fires onScan when a scanner (or person) presses Enter. */
-export function scanInput(opts: { placeholder: string; onScan: (v: string) => void; type?: string; label?: string; id?: string }) {
+/**
+ * Scan box. Enter submits. With `auto`, a scan also submits on its own about 150 ms after the last
+ * character when it came in at scanner speed (or was pasted), or when `complete(value)` says the
+ * value is already whole (e.g. a full SO number or IMEI typed by hand). A scanner that also sends
+ * Enter doesn't submit twice.
+ */
+export function scanInput(opts: { placeholder: string; onScan: (v: string) => void; type?: string; label?: string; id?: string; auto?: boolean; complete?: (v: string) => boolean }) {
   const input = h('input', {
     class: 'scan', type: opts.type || 'text', placeholder: opts.placeholder, autocomplete: 'off', autocapitalize: 'off',
     spellcheck: false, id: opts.id, 'aria-label': opts.label || opts.placeholder,
   });
+  let sent = '', firstAt = 0, lastAt = 0, pasted = false, timer: ReturnType<typeof setTimeout> | undefined;
+  const submit = () => {
+    clearTimeout(timer);
+    const v = input.value.trim();
+    if (!v || v === sent) return;
+    sent = v;
+    opts.onScan(v);
+  };
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const v = input.value.trim();
-      if (v) opts.onScan(v);
-    }
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
   });
+  if (opts.auto) {
+    input.addEventListener('input', e => {
+      const now = Date.now();
+      const v = input.value.trim();
+      if (v !== sent) sent = '';
+      if (v.length <= 1) { firstAt = now; pasted = false; }
+      if ((e as InputEvent).inputType === 'insertFromPaste') pasted = true;
+      lastAt = now;
+      clearTimeout(timer);
+      if (!v) return;
+      timer = setTimeout(() => {
+        const w = input.value.trim();
+        const fast = w.length >= 5 && (pasted || (lastAt - firstAt) / (w.length - 1) < 35);
+        if (fast || opts.complete?.(w)) submit();
+      }, 150);
+    });
+  }
   return input;
 }
 

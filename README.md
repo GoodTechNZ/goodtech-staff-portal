@@ -53,7 +53,7 @@ Duplicate saves can be cancelled with `portal_grading_dismiss(record, reason)` (
 
 ## Shipping
 
-Scan the SO (or label tracking number), scan each device IMEI, print the label, then Ship. If an IMEI isn't in the grading records, the packer is asked to confirm the device in hand is the model sold (one button per product still to scan). Confirming records a `manual_not_found` verification in staff-shipping with an automatic reason, against the signed-in name; it shows as a shipping override in the daily summary flags. No PIN is needed. Wrong devices (IMEI maps to another SKU) still can't be overridden.
+Scan the SO (or label tracking number), scan each device IMEI, print the label, then Ship. Both scan boxes submit by themselves (no Enter needed) about 0.15 s after a scan: when it arrives at scanner speed or is pasted, or when a whole SO number (SO + 5 digits), courier tracking number or 15-digit IMEI is typed. Enter still works. If an IMEI isn't in the grading records, the packer is asked to confirm the device in hand is the model sold (one button per product still to scan). Confirming records a `manual_not_found` verification in staff-shipping with an automatic reason, against the signed-in name; it shows as a shipping override in the daily summary flags. No PIN is needed. Wrong devices (IMEI maps to another SKU) still can't be overridden.
 
 ## Product-code changes (managers, PIN to confirm)
 
