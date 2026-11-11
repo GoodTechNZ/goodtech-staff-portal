@@ -147,6 +147,8 @@ after 5 minutes without use, when you leave it, or when it detects a badge or ba
 server lets the PIN unlock lapse after 5 idle minutes. The nav link only appears where access is
 allowed. Devices are ticked under "Devices with access" at the bottom of the page.
 
+Periods: Today, Yesterday, and 7 or 30 full days ending yesterday (NZ time; today is not included).
+
 Data: `portal_sales_ops(period)` over a 31-day copy of `excel_sales` / `excel_returns`
 (`reporting_cache.portal_sales_ops_*`). The copy is refreshed every 10 minutes, 5am–11pm NZ, by
 `portal_sales_ops_refresh()`, because the views take 6–8 s each. Shipping completions, grading

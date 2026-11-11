@@ -75,7 +75,7 @@ returns void language sql set search_path = public, pg_temp as $$
    where locked_at is null and (token_hash = public.portal_token_hash(coalesce(p_token, '')) or session_id = p_session);
 $$;
 
--- The numbers. Periods are NZ calendar days: today, yesterday, last 7 days, last 30 days (incl. today).
+-- The numbers. Periods are NZ calendar days: today, yesterday, and the 7 and 30 full days ending yesterday.
 create or replace function public.portal_sales_ops(p_period text)
 returns jsonb language plpgsql stable set search_path = public, pg_temp as $$
 declare today date := (now() at time zone 'Pacific/Auckland')::date; d0 date; d1 date; out jsonb;
