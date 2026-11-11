@@ -5,6 +5,9 @@
 export const API_URL: string =
   import.meta.env.VITE_PORTAL_API || 'https://mniqcdqajhhsrvfagmra.supabase.co/functions/v1/staff-portal';
 
+/** Manager-only Sales & Ops function (separate from the gateway; checks its own access rules). */
+export const SALES_OPS_URL: string = API_URL.replace(/staff-portal\/?$/, 'portal-sales-ops');
+
 export type J = Record<string, any>;
 export type Staff = { id: string; name: string; role: 'staff' | 'manager' };
 
@@ -47,10 +50,14 @@ export function onTerminalLost(fn: () => void) { terminalLostListener = fn; }
 let lastCall = 0;
 export function lastServerContact() { return lastCall; }
 
-export async function call<T = J>(action: string, body: J = {}): Promise<T> {
+export function call<T = J>(action: string, body: J = {}): Promise<T> {
+  return callUrl<T>(API_URL, action, body);
+}
+
+export async function callUrl<T = J>(url: string, action: string, body: J = {}): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(API_URL, {
+    r = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

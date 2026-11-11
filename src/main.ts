@@ -10,6 +10,7 @@ import { shippingScreen } from './screens/shipping.ts';
 import { salesScreen } from './screens/sales.ts';
 import { dashboardScreen } from './screens/dashboard.ts';
 import { adminScreen } from './screens/admin.ts';
+import { salesOpsScreen, salesOpsAvailable } from './screens/salesops.ts';
 
 export type ScreenCtx = {
   /** Called after a completed device/order: show a confirmation and reset the screen for the next one. */
@@ -22,6 +23,8 @@ const TABS = [
   { id: 'shipping', label: 'Shipping', screen: shippingScreen },
   { id: 'sales', label: 'Sales', screen: salesScreen },
   { id: 'admin', label: 'Admin', screen: adminScreen },
+  // Managers on approved devices only; the link is added once the server confirms access.
+  { id: 'salesops', label: 'Sales & Ops', screen: (_: ScreenCtx) => salesOpsScreen() },
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
@@ -29,12 +32,16 @@ const root = document.getElementById('app')!;
 const TAB_KEY = 'gt.portal.tab';
 let tab: TabId = (() => { try { const t = localStorage.getItem(TAB_KEY); return TABS.some(x => x.id === t) ? t as TabId : 'grading'; } catch { return 'grading'; } })();
 let idle: IdleTimer | null = null;
+/** Sales & Ops access for the current session: null = not checked yet. */
+let salesOpsAllowed: boolean | null = null;
+const tabVisible = (id: TabId) => id !== 'salesops' || salesOpsAllowed === true;
 let ticker: number | undefined;
 
 function stopIdle() { if (ticker) clearInterval(ticker); ticker = undefined; idle = null; }
 
 function showSignIn(notice?: string) {
   stopIdle();
+  salesOpsAllowed = null;
   auth.setSession('', null);
   if (!auth.terminal) return showSetup();
   mount(root, header(null), signInScreen(showApp, notice));
@@ -49,12 +56,31 @@ function header(countdown: HTMLElement | null) {
   const staff = auth.staff;
   return h('header', { class: 'topbar' },
     h('div', { class: 'brand' }, h('span', { class: 'logo', 'aria-hidden': 'true' }, 'GT'), h('span', {}, 'GoodTech Staff')),
-    staff ? h('nav', { class: 'tabs', 'aria-label': 'Sections' }, TABS.map(t =>
-      h('button', { type: 'button', class: 'tab' + (t.id === tab ? ' on' : ''), 'aria-current': t.id === tab ? 'page' : undefined, onclick: () => { setTab(t.id); } }, t.label))) : h('div', { class: 'spacer' }),
+    staff ? h('nav', { class: 'tabs', 'aria-label': 'Sections' }, TABS.filter(t => tabVisible(t.id)).map(tabButton)) : h('div', { class: 'spacer' }),
     h('div', { class: 'who' },
       countdown,
       staff ? h('span', { class: 'who-name' }, staff.name) : h('span', { class: 'muted small' }, auth.terminal?.name || ''),
       staff ? h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => signOut('manual') }, 'Sign out') : null));
+}
+
+function tabButton(t: typeof TABS[number]) {
+  return h('button', { type: 'button', class: 'tab' + (t.id === tab ? ' on' : ''), 'aria-current': t.id === tab ? 'page' : undefined, onclick: () => { setTab(t.id); } }, t.label);
+}
+
+// Ask the Sales & Ops function once per session whether this manager on this terminal may see it.
+function checkSalesOps() {
+  if (salesOpsAllowed !== null) return;
+  if (auth.staff?.role !== 'manager') { salesOpsAllowed = false; return; }
+  salesOpsAllowed = false;
+  salesOpsAvailable().then(ok => {
+    salesOpsAllowed = ok;
+    const nav = root.querySelector('nav.tabs');
+    if (ok && nav && !nav.querySelector('[data-tab="salesops"]')) {
+      const b = tabButton(TABS.find(t => t.id === 'salesops')!);
+      b.dataset.tab = 'salesops';
+      nav.appendChild(b);
+    }
+  });
 }
 
 function setTab(id: TabId) {
@@ -78,6 +104,8 @@ const ctx: ScreenCtx = {
 function showApp() {
   if (!auth.staff) return showSignIn();
   stopIdle();
+  if (!tabVisible(tab)) tab = 'dashboard';
+  checkSalesOps();
   const timer = new IdleTimer();
   idle = timer;
   const countdown = h('span', { class: 'countdown', 'aria-live': 'polite' });

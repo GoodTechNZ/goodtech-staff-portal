@@ -263,3 +263,42 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Product-code change: SKU search results */
 .sku-results { max-height: 260px; overflow-y: auto; }
 .sku-results .list-item { padding: 8px 12px; }
+
+/* Sales & Ops (mobile first: one column on a phone, wider grid on desktop) */
+.so-head { display: flex; flex-direction: column; gap: 12px; }
+.so-periods { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; }
+.so-periods .seg-btn { padding-left: 4px; padding-right: 4px; }
+.so-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.so-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.so-card h2 { font-size: 1rem; }
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kpi { background: var(--bg, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.kpi-v { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi-k { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.kpi-s { font-size: 0.75rem; color: var(--muted); }
+.so-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.so-table th, .so-table td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.so-table th { font-size: 0.75rem; color: var(--muted); font-weight: 600; }
+.so-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.so-busy { opacity: 0.55; transition: opacity 0.15s; }
+.so-lock { margin-top: 8px; }
+.so-device { gap: 10px; align-items: center; padding: 6px 0; }
+.so-device input { width: 20px; height: 20px; }
+.so-foot { padding: 0 4px; }
+@media (min-width: 760px) {
+  .so-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .so-grid > .so-card:first-child { grid-column: 1 / -1; }
+  .so-grid > .so-card:first-child .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .so-head { flex-direction: row; align-items: center; justify-content: space-between; }
+  .so-periods { width: auto; min-width: 380px; }
+  .so-grid > .so-foot { grid-column: 1 / -1; }
+}
+@media (min-width: 1200px) {
+  .so-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .so-table .so-opt { display: none; }
+  .so-table th, .so-table td { padding: 6px 4px; }
+  .so-periods .seg-btn { font-size: 0.85rem; }
+  .so-card { padding: 12px; }
+}
