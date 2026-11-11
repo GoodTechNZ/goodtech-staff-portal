@@ -1,4 +1,5 @@
 // Small DOM helpers: no framework, the screens are simple forms driven by scanners.
+import { auth } from './api.ts';
 
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, any>;
@@ -127,7 +128,10 @@ export function pinPad(opts: { onComplete: (pin: string) => void; label?: string
 }
 
 /** Modal asking for the PIN again before a sensitive action. Resolves null if cancelled. */
+/** PIN again for a sensitive action. On the person's own listed device (no PIN) it's a plain
+ * Confirm/Cancel instead; the server skips the PIN check there. */
 export function askPin(title: string, detail?: string): Promise<string | null> {
+  if (auth.staff?.pinless) return confirmDialog(title, detail || 'Confirm to continue.', 'Confirm').then(ok => ok ? 'none' : null);
   return new Promise(resolve => {
     const close = (v: string | null) => { overlay.remove(); resolve(v); };
     const pad = pinPad({ onComplete: pin => close(pin), label: 'Enter your PIN to confirm' });

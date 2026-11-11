@@ -14,7 +14,7 @@ const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BRIDGE = Deno.env.get('PORTAL_BRIDGE_TOKEN') || '';
 const ORIGINS = (Deno.env.get('PORTAL_ALLOWED_ORIGINS') || '*').split(',').map(s => s.trim()).filter(Boolean);
 
-type Ctx = { sessionId: string; terminalId: string; staff: { id: string; name: string; role: string } };
+type Ctx = { sessionId: string; terminalId: string; staff: { id: string; name: string; role: string; pinless?: boolean } };
 
 function cors(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
@@ -515,7 +515,8 @@ async function handle(req: Request): Promise<J> {
   const run = MODULES[module];
   if (!run || !action) throw new HttpError(400, 'Unknown action.');
   if (module === 'admin' && ctx.staff.role !== 'manager') throw new HttpError(403, 'Managers only.');
-  if (needsPin(module, action, b)) {
+  // No PIN again for a person on their own listed device (portal_config 'pinless_terminals').
+  if (needsPin(module, action, b) && !ctx.staff.pinless) {
     try { await requirePin(ctx, b.pin, module + '.' + action); }
     catch (e) { await log(ctx, module, action, null, 'denied', { reason: 'pin' }); throw e; }
   }

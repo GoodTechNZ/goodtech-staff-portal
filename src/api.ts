@@ -9,7 +9,7 @@ export const API_URL: string =
 export const SALES_OPS_URL: string = API_URL.replace(/staff-portal\/?$/, 'portal-sales-ops');
 
 export type J = Record<string, any>;
-export type Staff = { id: string; name: string; role: 'staff' | 'manager' };
+export type Staff = { id: string; name: string; role: 'staff' | 'manager'; pinless?: boolean };
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public data: J = {}) { super(message); }

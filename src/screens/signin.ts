@@ -1,7 +1,7 @@
 import { auth, call, ApiError, Staff } from '../api.ts';
 import { h, mount, message, pinPad } from '../ui.ts';
 
-type Person = { id: string; name: string; hasPin: boolean };
+type Person = { id: string; name: string; hasPin: boolean; noPin?: boolean };
 type SignIn = { ok: true; sessionToken: string; staff: Staff; idleSeconds: number };
 
 // Pick your name, then enter your 4-digit PIN. First time: set a PIN (entered twice).
@@ -19,7 +19,7 @@ export function signInScreen(onSignedIn: () => void, notice?: string): HTMLEleme
     try {
       const r = await call<{ staff: Person[] }>('auth.staff');
       mount(body, h('h1', {}, 'Who are you?'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status,
-        h('div', { class: 'name-grid' }, r.staff.map(p => h('button', { type: 'button', class: 'btn btn-name', onclick: () => p.hasPin ? pinStep(p) : newPinStep(p) }, p.name))));
+        h('div', { class: 'name-grid' }, r.staff.map(p => h('button', { type: 'button', class: 'btn btn-name', onclick: () => p.noPin ? signInNoPin(p) : p.hasPin ? pinStep(p) : newPinStep(p) }, p.name))));
     } catch (err) {
       fail(status, err);
       body.append(h('button', { type: 'button', class: 'btn', onclick: () => namesStep() }, 'Try again'));
@@ -27,6 +27,14 @@ export function signInScreen(onSignedIn: () => void, notice?: string): HTMLEleme
   }
 
   function back() { return h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => namesStep() }, 'Not you? Back to names'); }
+
+  // This person's own device (no PIN): one tap signs in.
+  async function signInNoPin(p: Person) {
+    const status = h('div', { class: 'status-slot' }, message('info', `Signing in as ${p.name}…`));
+    mount(body, status);
+    try { finish(await call<SignIn>('auth.signin', { staffId: p.id })); }
+    catch (err) { fail(status, err); body.append(back()); }
+  }
 
   function pinStep(p: Person) {
     const status = h('div', { class: 'status-slot' });

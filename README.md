@@ -30,6 +30,7 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
   - Shipping: changing shipping settings.
   - Sales: confirming payment received, or voiding an order.
   - Every staff/terminal admin action.
+- **No PIN on a person's own devices.** `portal_config.pinless_terminals` maps unshared terminals to one staff member (Fraser's 17 Pro, MacBook and Home PC → Fraser). There, that person signs in with one tap and sensitive actions ask Confirm/Cancel instead of the PIN. Anyone else on those devices, and Fraser on any other device, still uses a PIN. The 5-minute idle sign-out still applies.
 - **Lockout.** 5 wrong PINs lock the person for 15 minutes; a manager can unlock them.
 - **Sign-out** happens only when someone taps Sign out, or after 5 minutes without activity. Refreshing the page keeps you signed in. The idle limit is enforced in the browser and on the server, and `portal-expire-sessions` sweeps abandoned sessions every 5 minutes. Finishing a device or order shows a confirmation and resets the screen for the next one; it doesn't sign anyone out.
 
