@@ -13,15 +13,6 @@ export function orderKey(scan: string): Key {
   return /^SO\d+$/.test(v) ? { salesOrderNumber: v } : { trackingNumber: scan.trim().replace(/\s+/g, '') };
 }
 
-/** A whole SO number (SO + 5 digits) or courier tracking number, so a typed one submits by itself. */
-export function completeOrderScan(v: string): boolean {
-  const t = v.trim().replace(/\s+/g, '');
-  return /^SO\d{5}$/i.test(t) || /^\d{20}$/.test(t) || /^[A-Z]{2}\d{9}NZ$/i.test(t);
-}
-
-/** A whole 15-digit IMEI. */
-export const completeImei = (v: string): boolean => /^\d{15}$/.test(v.trim());
-
 /** Serial-tracked products on the order that still have devices to scan. */
 export function devicesToVerify(serialProducts: J[], scans: J[]): J[] {
   return serialProducts.filter(p => scans.filter(s => s.scanned_sku === p.sku).length < Number(p.quantity || 0));
@@ -45,7 +36,7 @@ export function shippingScreen(ctx: ScreenCtx): HTMLElement {
   const status = h('div', { class: 'status-slot' });
   const work = h('div', { class: 'stack' });
   let key: Key = {};
-  const scan = scanInput({ placeholder: 'Scan SO number or label tracking number', label: 'Sales order or tracking number', onScan: v => load(orderKey(v)), auto: true, complete: completeOrderScan });
+  const scan = scanInput({ placeholder: 'Scan SO number or label tracking number', label: 'Sales order or tracking number', onScan: v => load(orderKey(v)), auto: true });
 
   async function load(k: Key) {
     status.replaceChildren();
@@ -70,7 +61,7 @@ export function shippingScreen(ctx: ScreenCtx): HTMLElement {
     const needed = serialProducts.reduce((n, p) => n + Number(p.quantity || 0), 0);
     const done = scans.length >= needed;
 
-    const imei = scanInput({ placeholder: 'Scan device IMEI / serial', label: 'Device IMEI', onScan: v => scanDevice(v), auto: true, complete: completeImei });
+    const imei = scanInput({ placeholder: 'Scan device IMEI / serial', label: 'Device IMEI', onScan: v => scanDevice(v), auto: true });
     imei.disabled = readOnly || done || (pickup && sh.pickup_state !== 'not_ready');
 
     async function scanDevice(v: string) {

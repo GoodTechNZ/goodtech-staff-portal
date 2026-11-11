@@ -36,17 +36,17 @@ export function message(kind: 'error' | 'ok' | 'info' | 'warn', text: string) {
 
 /** Text input that fires onScan when a scanner (or person) presses Enter. */
 /**
- * Scan box. Enter submits. With `auto`, a scan also submits on its own about 150 ms after the last
- * character when it came in at scanner speed (or was pasted), or when `complete(value)` says the
- * value is already whole (e.g. a full SO number or IMEI typed by hand). A scanner that also sends
- * Enter doesn't submit twice.
+ * Scan box. Enter submits. With `auto`, a barcode scanner's input also submits on its own about
+ * 150 ms after the last character: only when the characters arrived at scanner speed (under 35 ms
+ * apart on average, 5+ characters). Typing or pasting by hand always waits for Enter. A scanner
+ * that also sends Enter doesn't submit twice.
  */
-export function scanInput(opts: { placeholder: string; onScan: (v: string) => void; type?: string; label?: string; id?: string; auto?: boolean; complete?: (v: string) => boolean }) {
+export function scanInput(opts: { placeholder: string; onScan: (v: string) => void; type?: string; label?: string; id?: string; auto?: boolean }) {
   const input = h('input', {
     class: 'scan', type: opts.type || 'text', placeholder: opts.placeholder, autocomplete: 'off', autocapitalize: 'off',
     spellcheck: false, id: opts.id, 'aria-label': opts.label || opts.placeholder,
   });
-  let sent = '', firstAt = 0, lastAt = 0, pasted = false, timer: ReturnType<typeof setTimeout> | undefined;
+  let sent = '', firstAt = 0, lastAt = 0, timer: ReturnType<typeof setTimeout> | undefined;
   const submit = () => {
     clearTimeout(timer);
     const v = input.value.trim();
@@ -62,15 +62,14 @@ export function scanInput(opts: { placeholder: string; onScan: (v: string) => vo
       const now = Date.now();
       const v = input.value.trim();
       if (v !== sent) sent = '';
-      if (v.length <= 1) { firstAt = now; pasted = false; }
-      if ((e as InputEvent).inputType === 'insertFromPaste') pasted = true;
+      // Only keystrokes count; a paste or autofill resets the timing so it can't look like a scan.
+      if (v.length <= 1 || (e as InputEvent).inputType !== 'insertText') firstAt = now;
       lastAt = now;
       clearTimeout(timer);
       if (!v) return;
       timer = setTimeout(() => {
         const w = input.value.trim();
-        const fast = w.length >= 5 && (pasted || (lastAt - firstAt) / (w.length - 1) < 35);
-        if (fast || opts.complete?.(w)) submit();
+        if (w.length >= 5 && firstAt < lastAt && (lastAt - firstAt) / (w.length - 1) < 35) submit();
       }, 150);
     });
   }
