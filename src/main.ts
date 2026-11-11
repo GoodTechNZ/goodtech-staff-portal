@@ -57,7 +57,7 @@ function showSetup() {
 function header(countdown: HTMLElement | null) {
   const staff = auth.staff;
   return h('header', { class: 'topbar' },
-    h('div', { class: 'brand', title: 'GoodTech Staff' }, h('span', { class: 'logo', 'aria-label': 'GoodTech Staff' }, 'GT')),
+    h('div', { class: 'brand', title: 'GoodTech Staff' }, h('img', { class: 'logo', src: '/goodtech-logo.png', alt: 'GoodTech', width: 40, height: 40 })),
     staff ? h('nav', { class: 'tabs', 'aria-label': 'Sections' }, TABS.filter(t => tabVisible(t.id)).map(tabButton)) : h('div', { class: 'spacer' }),
     h('div', { class: 'who' },
       countdown,

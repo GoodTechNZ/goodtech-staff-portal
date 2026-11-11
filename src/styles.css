@@ -68,7 +68,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 /* Layout */
 .topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; white-space: nowrap; }
-.logo { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--brand); color: var(--brand-ink); font-size: 0.85rem; }
+.logo { display: block; width: 40px; height: 40px; }
 .tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
 .spacer { flex: 1; }
 .tab { border: 0; background: transparent; padding: 10px 16px; border-radius: 10px; font-weight: 600; color: var(--muted); cursor: pointer; min-height: 44px; }
