@@ -142,10 +142,10 @@ It posts to the gateway's `sync.asn` action, authenticated by the `x-sync-token`
 
 A manager-only page, served by its own edge function `portal-sales-ops`. On every request the
 function checks the portal session, that the role is manager, and that the terminal is listed in
-`portal_config.dashboard_terminals`. The page asks for the PIN each time it's opened. It locks
-after 5 minutes without use, when you leave it, or when it detects a badge or barcode scan, and the
-server lets the PIN unlock lapse after 5 idle minutes. The nav link only appears where access is
-allowed. Devices are ticked under "Devices with access" at the bottom of the page.
+`portal_config.dashboard_terminals` (Fraser's phone, MacBook and home PC). There's no extra PIN on the
+page: the portal sign-in PIN and its 5-minute idle sign-out are the protection. The nav link only
+appears where access is allowed. Devices are ticked under "Devices with access" at the bottom of
+the page.
 
 Periods: Today, Yesterday, and 7 or 30 full days ending yesterday (NZ time; today is not included).
 

@@ -3,11 +3,10 @@
 //   1. a live portal session for this terminal (same 5-minute idle rule as the rest of the portal);
 //   2. the session's staff role is 'manager';
 //   3. the terminal id is in portal_config 'dashboard_terminals';
-//   4. for data: a dashboard unlock token from this session, issued after the PIN and used within
-//      the last 5 minutes. Opening the page always asks for the PIN again (the page locks on leave,
-//      idle, or a badge scan).
-// Actions: access (is the page available here?), unlock {pin}, data {token, period}, touch {token}, lock {token},
-// devices {token} / set_device {token, terminalId, allow} (which terminals may open the page).
+// No extra PIN for the page (only Fraser's devices are allowed); the portal sign-in PIN and its
+// 5-minute idle sign-out still apply.
+// Actions: access (is the page available here?), data {period},
+// devices / set_device {terminalId, allow} (which terminals may open the page).
 
 type J = Record<string, any>;
 
@@ -71,22 +70,7 @@ async function handle(req: Request): Promise<J> {
     throw new HttpError(403, 'Sales & Ops is only available to managers on approved devices.', { dashboardDenied: true });
   }
 
-  if (action === 'unlock') {
-    const pin = String(b.pin ?? '');
-    if (!/^\d{4}$/.test(pin)) throw new HttpError(403, 'Enter your PIN.', { pinRequired: true });
-    const ok = await rpc('portal_pin_ok', { p_staff: s.staff.id, p_pin: pin, p_terminal: s.terminalId, p_purpose: 'salesops.unlock' });
-    if (!ok?.ok) { await log(s, 'unlock', 'denied', { reason: 'pin' }); throw new HttpError(403, ok?.error || 'Wrong PIN.', { pinRequired: true }); }
-    const token = await rpc('portal_dashboard_unlock', { p_session: s.sessionId, p_terminal: s.terminalId, p_staff: s.staff.id });
-    await log(s, 'unlock', 'ok');
-    return { token };
-  }
-  if (action === 'lock') {
-    await rpc('portal_dashboard_lock', { p_token: String(b.token || ''), p_session: s.sessionId });
-    return { ok: true };
-  }
   if (action === 'devices' || action === 'set_device') {
-    const fresh = await rpc('portal_dashboard_check', { p_token: String(b.token || ''), p_session: s.sessionId, p_terminal: s.terminalId });
-    if (fresh !== true) throw new HttpError(403, 'Locked. Enter your PIN to open Sales & Ops.', { locked: true });
     if (action === 'set_device') {
       const id = String(b.terminalId || '');
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(400, 'Choose a device.');
@@ -96,15 +80,7 @@ async function handle(req: Request): Promise<J> {
     }
     return { devices: await rpc('portal_dashboard_devices', {}), current: s.terminalId };
   }
-  if (action === 'touch') {
-    // Activity on the open page keeps the unlock alive (it still lapses 5 minutes after the last use).
-    const fresh = await rpc('portal_dashboard_check', { p_token: String(b.token || ''), p_session: s.sessionId, p_terminal: s.terminalId });
-    if (fresh !== true) throw new HttpError(403, 'Locked. Enter your PIN to open Sales & Ops.', { locked: true });
-    return { ok: true };
-  }
   if (action === 'data') {
-    const fresh = await rpc('portal_dashboard_check', { p_token: String(b.token || ''), p_session: s.sessionId, p_terminal: s.terminalId });
-    if (fresh !== true) throw new HttpError(403, 'Locked. Enter your PIN to open Sales & Ops.', { locked: true });
     const period = PERIODS.includes(String(b.period)) ? String(b.period) : 'today';
     return await rpc('portal_sales_ops', { p_period: period });
   }

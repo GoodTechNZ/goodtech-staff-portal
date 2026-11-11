@@ -1,23 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { ScanDetector, renderSalesOps, dollars, pct, fmtTime } from '../src/screens/salesops.ts';
-
-describe('ScanDetector', () => {
-  it('spots a scanner burst ending in Enter', () => {
-    const d = new ScanDetector();
-    let t = 1000;
-    for (const k of 'GT00123') d.key(k, (t += 8));
-    expect(d.key('Enter', (t += 8))).toBe(true);
-  });
-  it('ignores normal typing and short bursts', () => {
-    const d = new ScanDetector();
-    let t = 1000;
-    for (const k of 'iphone13') d.key(k, (t += 120));
-    expect(d.key('Enter', (t += 120))).toBe(false);
-    for (const k of '1234') d.key(k, (t += 8));
-    expect(d.key('Enter', (t += 8))).toBe(false);
-  });
-});
+import { renderSalesOps, dollars, pct, fmtTime } from '../src/screens/salesops.ts';
 
 describe('formatting', () => {
   it('formats dollars and percentages', () => {
