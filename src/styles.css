@@ -364,3 +364,10 @@ a.order-link[href] { color: var(--brand-text); text-decoration: underline; text-
 .row.receive { flex: 1 1 360px; align-items: center; }
 .row.receive .scan { flex: 1; min-width: 0; }
 @media (max-width: 640px) { .out-line { grid-template-columns: 1fr 1fr; } .out-line > div:first-child { grid-column: 1 / -1; } }
+
+/* Grading: supplier returns cut-off (day 7+) */
+.cutoff-card.cutoff-urgent { border-color: #d64545; }
+.cutoff-table tr.cutoff-so td { background: var(--surface-2); padding-top: 8px; }
+.cutoff-table tr.cutoff-last td { background: #fde8e8; color: #9b1c1c; }
+.cutoff-untested { color: #b42318; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cutoff-table tr.cutoff-last td { background: #4a1d1d; color: #ffb4b4; } }

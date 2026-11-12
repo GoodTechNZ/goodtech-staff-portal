@@ -8,6 +8,7 @@ import { h, mount, message, nzTime } from '../ui.ts';
 
 export const TIER_LABEL: Record<number, string> = { 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
 const OPEN_KEY = 'gt.portal.priority.open';
+const CUTOFF_KEY = 'gt.portal.cutoff.open';
 const SHOW_KEY = 'gt.portal.priority.show';
 type Show = 'urgent' | 'high' | 'all';
 
@@ -51,6 +52,49 @@ export function renderPriority(d: J, show: Show, onShow: (s: Show) => void): HTM
   ];
 }
 
+const dayMonth = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+
+/** Supplier returns: devices in SOs on day 7 or later since delivery (day 7 is the last day to raise
+ * supplier returns), grouped by SO with day 7 first; untested devices first in each SO. */
+export function renderCutoff(c: J): HTMLElement[] {
+  const sos: J[] = c?.today || [];
+  const tomorrow: J[] = c?.tomorrow || [];
+  return [
+    sos.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'so-table cutoff-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Device'), h('th', {}, 'Serial'), h('th', {}, 'Grade'), h('th', {}, 'Location'), h('th', { class: 'so-opt' }, 'Status'))),
+      sos.map(so => h('tbody', {},
+        h('tr', { class: 'cutoff-so' + (so.days === 7 ? ' cutoff-last' : '') }, h('td', { colspan: 5 },
+          h('strong', {}, `SO ${so.so}`), ` · ${so.warehouse || ''} · delivered ${dayMonth(so.delivered)} · `,
+          h('strong', {}, so.days === 7 ? 'Day 7 — last day today' : `Day ${so.days}`),
+          ` · ${so.devices} device${so.devices === 1 ? '' : 's'}${so.untested ? `, ${so.untested} untested` : ''}`)),
+        (so.items || []).map((d: J) => h('tr', {},
+          h('td', {}, d.model || '—'), h('td', { class: 'mono small' }, d.serial),
+          h('td', {}, d.tested ? d.grade || '—' : h('span', { class: 'cutoff-untested' }, 'Untested')),
+          h('td', {}, d.location || '—'), h('td', { class: 'so-opt small' }, d.status || '')))))))
+      : h('p', { class: 'muted small' }, 'No received orders are on day 7 or later.'),
+    tomorrow.length ? h('p', { class: 'small' }, h('strong', {}, 'Day 7 tomorrow: '),
+      tomorrow.map(t => `SO ${t.so} (${t.devices} device${t.devices === 1 ? '' : 's'}${t.untested ? `, ${t.untested} untested` : ''})`).join(', ')) : null,
+  ].filter(Boolean) as HTMLElement[];
+}
+
+function cutoffCard(): { el: HTMLElement; fill: (c: J) => void } {
+  const body = h('div', { class: 'stack' }, h('p', { class: 'muted small' }, 'Loading…'));
+  const count = h('span', { class: 'muted small' });
+  let open = true;
+  try { open = localStorage.getItem(CUTOFF_KEY) !== '0'; } catch { /* private mode */ }
+  const el = h('details', { class: 'card tp-card cutoff-card', open }, h('summary', {}, h('span', { class: 'tp-title' }, 'Supplier returns · day 7+'), count), body);
+  el.addEventListener('toggle', () => { try { localStorage.setItem(CUTOFF_KEY, el.open ? '1' : '0'); } catch { /* ignore */ } });
+  const fill = (c: J) => {
+    const sos: J[] = c?.today || [];
+    const devices = sos.reduce((n, x) => n + Number(x.devices || 0), 0);
+    const last = sos.filter(x => x.days === 7).reduce((n, x) => n + Number(x.devices || 0), 0);
+    count.textContent = ` · ${devices} device${devices === 1 ? '' : 's'} in ${sos.length} order${sos.length === 1 ? '' : 's'}${last ? ` · ${last} on day 7 (last day)` : ''}`;
+    el.classList.toggle('cutoff-urgent', last > 0);
+    mount(body, h('p', { class: 'muted small' }, 'Day 7 after delivery is the last day to return devices to the supplier. Received orders on day 7 or later, with every device and where it is.'), ...renderCutoff(c));
+  };
+  return { el, fill };
+}
+
 /** The collapsible Testing priority card for the top of the Grading tab. */
 export function testingPriorityCard(): HTMLElement {
   const body = h('div', { class: 'stack' }, h('p', { class: 'muted small' }, 'Loading…'));
@@ -65,8 +109,9 @@ export function testingPriorityCard(): HTMLElement {
     count.textContent = ` · ${data.tiers?.urgent || 0} urgent of ${data.total || 0}`;
     mount(body, ...renderPriority(data, show, s => { show = s; try { localStorage.setItem(SHOW_KEY, s); } catch { /* ignore */ } draw(); }));
   };
+  const cutoff = cutoffCard();
   call<J>('grading.priority')
-    .then(d => { data = d; draw(); })
-    .catch(err => mount(body, message('error', err instanceof ApiError ? err.message : 'Testing priority unavailable.')));
-  return box;
+    .then(d => { data = d; draw(); cutoff.fill(d.cutoff); if (!d.cutoff) cutoff.el.remove(); })
+    .catch(err => { cutoff.el.remove(); mount(body, message('error', err instanceof ApiError ? err.message : 'Testing priority unavailable.')); });
+  return h('div', { class: 'stack' }, cutoff.el, box);
 }

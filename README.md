@@ -37,6 +37,8 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
 
 ## Grading
 
+**Supplier returns · day 7+** sits above it: every device in received orders on day 7 or later since delivery (day 7 is the last day to return devices to the supplier), grouped by order with day 7 first and highlighted. It shows model, serial, grade (or Untested), location and status, plus the orders reaching day 7 tomorrow. Days = NZ today − Delivered date in ASNs Shipment Check (`portal_supplier_cutoff()`, served with `grading.priority`).
+
 **Testing priority** sits at the top of the tab (collapsible; remembers open/closed and the Urgent / Urgent + High / All filter). It is the "Daily testing priority" routine, live: untested devices in received SOs (ASNs rows with no grade whose SO has a Delivered date), ranked by Ready For Sale days of cover at the model's sales rate. Velocity = max(sold 30d ÷ 30, sold 90d ÷ 90 × 0.8); Urgent < 7 days, High < 14, Medium < 30, else Low; fewer than 4 sold in 30 days drops a tier; Test now = units to reach 21 days of cover, capped at the number waiting. Sales and stock come from `reporting_cache.portal_testing_demand`, refreshed hourly at :20 (5am–10pm NZ) by cron `portal-testing-demand` (`portal_testing_demand_refresh()`, ~60 s); the ranking itself is `portal_testing_priority()` (gateway `grading.priority`).
 
 Scan a serial/IMEI, grade it, record the 12 functional tests and the destination, then save. The tester
