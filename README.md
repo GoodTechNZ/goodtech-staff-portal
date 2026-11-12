@@ -65,7 +65,7 @@ Scan the SO (or label tracking number), scan each device IMEI, print the label, 
 
 A tab for all staff, served by its own edge function `portal-returns` (same portal session check as the gateway).
 
-1. **Find** the order: name, email, phone, SO, Shopify # or IMEI (`portal_returns_find`, Cin7 sales from the last 3 years).
+1. **Find** the order: name, email, phone, SO, Shopify # or IMEI (`portal_returns_find`, Cin7 sales from the last 3 years). Searches use `portal_sales_search` (one slim row per sale with trigram indexes, kept current by a trigger on `cin7_sales_raw`), so they take well under a second instead of reading every sale's full JSON.
 2. **Log the return** (`portal_returns`, numbered RT1001…): items (with IMEI), reason, details, what the customer wants (refund, replacement, warranty repair, not decided) and contact / address. Recorded against the signed-in staff; every step goes in `portal_return_events` and the activity log.
 3. **Email return label**: creates an eShip order addressed to GoodTech (Service | GoodTech, 1A Elgin Street), prints the label, and queues the PDF in `portal_outbound_email`. `apps-script/ReturnsMailer.gs`, running in the service mailbox, sends it within a minute, so replies come back to the service inbox. Label settings (CourierPost, Courier Pack A5) are copied once from the latest manual return label and kept in `portal_config.returns_eship_return_template`.
 4. **Mark received**: scan the device back in. It must match the IMEI on the return.
