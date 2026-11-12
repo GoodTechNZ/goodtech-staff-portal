@@ -71,7 +71,7 @@ export function renderCutoff(c: J): HTMLElement[] {
           h('td', {}, d.model || '—'), h('td', { class: 'mono small' }, d.serial),
           h('td', {}, d.tested ? d.grade || '—' : h('span', { class: 'cutoff-untested' }, 'Untested')),
           h('td', {}, d.location || '—'), h('td', { class: 'so-opt small' }, d.status || '')))))))
-      : h('p', { class: 'muted small' }, 'No received orders are on day 7 or later.'),
+      : h('p', { class: 'muted small' }, 'No untested or Locked devices in orders on day 7 or later.'),
     tomorrow.length ? h('p', { class: 'small' }, h('strong', {}, 'Day 7 tomorrow: '),
       tomorrow.map(t => `SO ${t.so} (${t.devices} device${t.devices === 1 ? '' : 's'}${t.untested ? `, ${t.untested} untested` : ''})`).join(', ')) : null,
   ].filter(Boolean) as HTMLElement[];
@@ -90,7 +90,7 @@ function cutoffCard(): { el: HTMLElement; fill: (c: J) => void } {
     const last = sos.filter(x => x.days === 7).reduce((n, x) => n + Number(x.devices || 0), 0);
     count.textContent = ` · ${devices} device${devices === 1 ? '' : 's'} in ${sos.length} order${sos.length === 1 ? '' : 's'}${last ? ` · ${last} on day 7 (last day)` : ''}`;
     el.classList.toggle('cutoff-urgent', last > 0);
-    mount(body, h('p', { class: 'muted small' }, 'Day 7 after delivery is the last day to return devices to the supplier. Received orders on day 7 or later, with every device and where it is.'), ...renderCutoff(c));
+    mount(body, h('p', { class: 'muted small' }, 'Day 7 after delivery is the last day to return devices to the supplier. Untested and Locked devices in received orders on day 7 or later.'), ...renderCutoff(c));
   };
   return { el, fill };
 }
