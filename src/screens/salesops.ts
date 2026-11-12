@@ -68,7 +68,7 @@ export function renderSalesOps(d: J): HTMLElement[] {
       (d.channels || []).map((c: J) => [c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3])),
     card('Sales type', table(['Type', 'Devices', 'Revenue', 'GP', 'GP %'],
       (d.types || []).map((c: J) => [c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3]),
-      h('p', { class: 'muted small' }, 'In-store sales = in-store devices and accessories; Repairs, Replacement (replacement devices for returns) and Warranty come from the Cin7 sales group / sales rep. Net of returns.')),
+      h('p', { class: 'muted small' }, 'Website, Reebelo and Trade Me are the online channels; In-store sales = in-store devices and accessories; Repairs, Replacement (replacement devices for returns) and Warranty come from the Cin7 sales group / sales rep. Net of returns.')),
     card('Staff sales', table(['Staff', 'Devices', 'Revenue', 'GP', 'GP %'],
       (d.staff || []).map((c: J) => [c.name === 'Unassigned' ? 'No salesperson' : c.name, c.units, dollars(c.revenue), dollars(c.gp), pct(c.gpPct)]), 1, [3])),
     card('Returns',
