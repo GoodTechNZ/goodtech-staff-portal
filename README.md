@@ -11,6 +11,7 @@ Browser (Cloudflare Pages, static)
 supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity log, sign-out rules
    ├─ Grading  → portal_grading_* RPCs → portal_grading_outbox → sheet worker → ASNs DB / Grading tab
    ├─ Shipping → existing staff-shipping function (Cin7, eShip, Shopify)
+   ├─ Returns  → portal-returns function (returns log, eShip labels, Replacement / Warranty SOs)
    ├─ Sales    → existing staff-sales-desk function (Cin7)
    ├─ Dashboard→ portal_ops_dashboard (orders, pick-ups, high alert, returns, Cin7 Repairs/Locked)
    │             + asn_ops_summary (received not tested, graded / repairs / locked not POed)
@@ -57,6 +58,21 @@ Duplicate saves can be cancelled with `portal_grading_dismiss(record, reason)` (
 Scan the SO (or label tracking number), scan each device IMEI, print the label, then Ship. Both scan boxes submit by themselves (no Enter needed) about 0.15 s after a barcode scan, detected by scanner-speed keystrokes (5+ characters under 35 ms apart on average). Anything typed or pasted by hand waits for Enter. If an IMEI isn't in the grading records, the packer is asked to confirm the device in hand is the model sold (one button per product still to scan). Confirming records a `manual_not_found` verification in staff-shipping with an automatic reason, against the signed-in name; it shows as a shipping override in the daily summary flags. No PIN is needed. Wrong devices (IMEI maps to another SKU) still can't be overridden.
 
 **Sales:** the scan box submits by itself for a barcode scanner (same rule as Shipping). Add-ons appear under each device in the cart, only once it's added, and only those that fit it: iPhone → screen protector, clear gel case, and MagSafe clear / black silicone cases (iPhone 12+ and Air; not SE or 16e); iPad → screen protector; Pixel → screen protector and gel case; Galaxy phones → gel case, plus the screen protector on S21–S24.
+
+## Returns
+
+A tab for all staff, served by its own edge function `portal-returns` (same portal session check as the gateway).
+
+1. **Find** the order: name, email, phone, SO, Shopify # or IMEI (`portal_returns_find`, Cin7 sales from the last 3 years).
+2. **Log the return** (`portal_returns`, numbered RT1001…): items (with IMEI), reason, details, what the customer wants (refund, replacement, warranty repair, not decided) and contact / address. Recorded against the signed-in staff; every step goes in `portal_return_events` and the activity log.
+3. **Email return label**: creates an eShip order addressed to GoodTech (Service | GoodTech, 1A Elgin Street), prints the label, and queues the PDF in `portal_outbound_email`. `apps-script/ReturnsMailer.gs`, running in the service mailbox, sends it within a minute, so replies come back to the service inbox. Label settings (CourierPost, Courier Pack A5) are copied once from the latest manual return label and kept in `portal_config.returns_eship_return_template`.
+4. **Mark received**: scan the device back in. It must match the IMEI on the return.
+5. **Replacement / warranty**: creates and authorises a Cin7 SO (rep Replacement or Warranty, reference RT1001-R / -W, the customer's delivery address, prices as entered) and a matching eShip order. Then **scan that SO in Shipping**, verify the device, print the label and Ship, as for any other SO. Courier settings are copied from a recent Shopify courier parcel (`returns_eship_outbound_template`).
+6. **Close** with an outcome note (e.g. the credit note number), or cancel with a reason.
+
+Credit notes and refunds are still done in Cin7.
+
+**Mailer setup (once):** in the service mailbox account, create an Apps Script project with `apps-script/ReturnsMailer.gs`, set the script property `RETURNS_MAIL_TOKEN` (its SHA-256 is `portal_config.returns_mail_token_sha256`), run `sendQueuedReturnEmails` once to grant Gmail access, and add an every-minute trigger.
 
 ## Order links
 

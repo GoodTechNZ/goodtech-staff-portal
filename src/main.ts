@@ -10,6 +10,7 @@ import { shippingScreen } from './screens/shipping.ts';
 import { salesScreen } from './screens/sales.ts';
 import { dashboardScreen } from './screens/dashboard.ts';
 import { adminScreen } from './screens/admin.ts';
+import { returnsScreen } from './screens/returns.ts';
 import { salesOpsScreen, salesOpsAvailable } from './screens/salesops.ts';
 
 export type ScreenCtx = {
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'grading', label: 'Grading', screen: gradingScreen },
   { id: 'shipping', label: 'Shipping', screen: shippingScreen },
   { id: 'sales', label: 'Sales', screen: salesScreen },
+  { id: 'returns', label: 'Returns', screen: returnsScreen },
   { id: 'admin', label: 'Admin', screen: adminScreen },
   // Managers on approved devices only; the link is added once the server confirms access.
   { id: 'salesops', label: 'Sales & Ops', screen: (_: ScreenCtx) => salesOpsScreen() },

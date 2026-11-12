@@ -7,6 +7,8 @@ export const API_URL: string =
 
 /** Manager-only Sales & Ops function (separate from the gateway; checks its own access rules). */
 export const SALES_OPS_URL: string = API_URL.replace(/staff-portal\/?$/, 'portal-sales-ops');
+/** Returns tab function (checks the same portal session). */
+export const RETURNS_URL: string = API_URL.replace(/staff-portal\/?$/, 'portal-returns');
 
 export type J = Record<string, any>;
 export type Staff = { id: string; name: string; role: 'staff' | 'manager'; pinless?: boolean };
