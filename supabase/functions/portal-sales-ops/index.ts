@@ -3,8 +3,8 @@
 //   1. a live portal session for this terminal (same 5-minute idle rule as the rest of the portal);
 //   2. the session's staff role is 'manager';
 //   3. the terminal id is in portal_config 'dashboard_terminals';
-// No extra PIN for the page (only Fraser's devices are allowed); the portal sign-in PIN and its
-// 5-minute idle sign-out still apply.
+//   4. the session is unlocked with the manager's PIN (gateway auth.unlock), or the terminal is the
+//      manager's own device (portal_config 'pinless_terminals'). Sign-in itself is name-only.
 // Actions: access (is the page available here?), data {period},
 // devices / set_device {terminalId, allow} (which terminals may open the page).
 
@@ -68,6 +68,10 @@ async function handle(req: Request): Promise<J> {
   if (!allowed) {
     await log(s, action || 'unknown', 'denied', { reason: s.staff?.role === 'manager' ? 'terminal' : 'role' });
     throw new HttpError(403, 'Sales & Ops is only available to managers on approved devices.', { dashboardDenied: true });
+  }
+  if (!s.staff?.elevated) {
+    await log(s, action || 'unknown', 'denied', { reason: 'locked' });
+    throw new HttpError(403, 'Unlock with your PIN to continue.', { elevate: true });
   }
 
   if (action === 'devices' || action === 'set_device') {

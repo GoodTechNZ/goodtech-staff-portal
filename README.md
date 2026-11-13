@@ -6,9 +6,9 @@ project `mniqcdqajhhsrvfagmra`.
 ```
 Browser (Cloudflare Pages, static)
    │  x-terminal-token  (per enrolled terminal, localStorage)
-   │  x-session-token   (per signed-in person after name + PIN, memory only)
+   │  x-session-token   (per signed-in person after tapping their name)
    ▼
-supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity log, sign-out rules
+supabase/functions/staff-portal      ← this repo: auth, Admin unlock, activity log, sign-out rules
    ├─ Grading  → portal_grading_* RPCs → portal_grading_outbox → sheet worker → ASNs DB / Grading tab
    ├─ Shipping → existing staff-shipping function (Cin7, eShip, Shopify)
    ├─ Returns  → portal-returns function (returns log, eShip labels, Replacement / Warranty SOs)
@@ -20,19 +20,16 @@ supabase/functions/staff-portal      ← this repo: auth, PIN checks, activity l
 
 ## Staff sign-in
 
-- **Terminals** are enrolled once with a single-use code that only Fraser can create (Admin → Enrol a new terminal, with PIN). A code expires after 15 minutes and only works from the same network (public IP, i.e. the same Wi-Fi) it was created on. Managers can revoke a terminal from Admin.
-- **Name + PIN.** On an enrolled terminal, staff tap their name, then enter their 4-digit PIN.
+- **Terminals** are enrolled once with a single-use code that only Fraser can create (Admin → Enrol a new terminal). A code expires after 15 minutes and only works from the same network (public IP, i.e. the same Wi-Fi) it was created on. Managers can revoke a terminal from Admin.
+- **Name only.** On an enrolled terminal, staff tap their name to sign in. No PIN.
   - The names come from the `staff` table: Crystal (formerly Wei), Li (formerly Liwei), David, Fraser (manager), Haobin, Piper, Tallula and Tristan.
-  - First use: someone with no PIN yet sets one, entering it twice. Weak PINs like 1234 or 0000 are refused.
-  - Managers see a **PIN set** flag that day so they can confirm it was really that person.
-  - A manager can reset a PIN from the Dashboard; the person then sets a new one at next sign-in.
-- **PIN again** for sensitive actions:
-  - Grading: changing an existing grading record.
-  - Shipping: changing shipping settings.
-  - Sales: confirming payment received, or voiding an order.
-  - Every staff/terminal admin action.
-- **No PIN on a person's own devices.** `portal_config.pinless_terminals` maps unshared terminals to one staff member (Fraser's 17 Pro, MacBook and Home PC → Fraser). There, that person signs in with one tap and sensitive actions ask Confirm/Cancel instead of the PIN. Anyone else on those devices, and Fraser on any other device, still uses a PIN. The 5-minute idle sign-out still applies.
-- **Lockout.** 5 wrong PINs lock the person for 15 minutes; a manager can unlock them.
+  - **Switch user:** the name in the header is a menu. Pick another name to end this session and sign in as them. On phones, Sign out is in this menu too.
+  - Signing in elsewhere ends that person's other session, as before.
+- **PIN only for Admin and Sales & Ops.** Opening either tab shows a PIN pad. The manager's PIN (`portal_session_elevate`, called by gateway `auth.unlock`) unlocks the session (`portal_sessions.elevated_at`) until sign-out, switching user or the 5-minute idle sign-out. The same unlock covers confirming a Cin7 product-code change from Grading.
+  - Enforced on the server: the gateway refuses every `admin.*` action and `stock.commit` with `403 {elevate:true}`, and `portal-sales-ops` refuses its data and device actions, until the session is unlocked.
+  - Everything else needs no PIN: re-grading, payment received and void in Sales, and shipping settings ask Confirm/Cancel at most.
+- **No PIN on Fraser's own devices.** On a terminal listed in `portal_config.pinless_terminals` (Fraser's 17 Pro, MacBook and Home PC), Admin and Sales & Ops are already unlocked.
+- **Lockout.** 5 wrong PINs lock the PIN for 15 minutes; a manager can unlock it from Admin.
 - **Sign-out** happens only when someone taps Sign out, or after 5 minutes without activity. Refreshing the page keeps you signed in. The idle limit is enforced in the browser and on the server, and `portal-expire-sessions` sweeps abandoned sessions every 5 minutes. Finishing a device or order shows a confirmation and resets the screen for the next one; it doesn't sign anyone out.
 
 ## Grading
@@ -80,10 +77,10 @@ Credit notes and refunds are still done in Cin7.
 
 Cin7 SO numbers and Shopify order numbers (#39430) shown in the portal link to the order (new tab): SOs to `https://inventory.dearsystems.com/Sale#<sale id>~<sale id>~tabOrder`, # numbers to `https://admin.shopify.com/store/goodtech/orders/<order id>`. Used on the Dashboard order lists and pick results, the Shipping order header and the Sales order heading. `orderRef()` (src/orderlinks.ts) renders the number and one batched `dashboard.links` call (`portal_order_links`, from `cin7_sales_raw` and `shopify_orders`) fills in the links. Numbers that aren't found stay plain text. Supplier (HYLA) order numbers aren't linked.
 
-## Product-code changes (managers, PIN to confirm)
+## Product-code changes (managers, unlocked session)
 
 - **One device** (Grading → scan → *Change product code*): pick the new SKU (other grades are one tap)
-  and a reason, review the live Cin7 balances, confirm with the PIN.
+  and a reason, review the live Cin7 balances, then confirm (asks for the PIN if the session isn't unlocked yet).
 - **Stock without IMEIs** (Admin → *Move stock between product codes*): from/to SKU, location, quantity.
 
 Cin7 is changed with one stock adjustment, reference `Code change <id>`. It takes N off the old SKU and
@@ -174,8 +171,8 @@ It posts to the gateway's `sync.asn` action, authenticated by the `x-sync-token`
 
 A manager-only page, served by its own edge function `portal-sales-ops`. On every request the
 function checks the portal session, that the role is manager, and that the terminal is listed in
-`portal_config.dashboard_terminals` (Fraser's phone, MacBook and home PC). There's no extra PIN on the
-page: the portal sign-in PIN and its 5-minute idle sign-out are the protection. The nav link only
+`portal_config.dashboard_terminals` (Fraser's phone, MacBook and home PC). The session must also be
+unlocked with the manager's PIN (see Staff sign-in), unless it is one of Fraser's own devices. The nav link only
 appears where access is allowed. Devices are ticked under "Devices with access" at the bottom of
 the page.
 

@@ -1,5 +1,5 @@
 // Small DOM helpers: no framework, the screens are simple forms driven by scanners.
-import { auth } from './api.ts';
+import { auth, call, ApiError } from './api.ts';
 
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, any>;
@@ -130,18 +130,49 @@ export function pinPad(opts: { onComplete: (pin: string) => void; label?: string
 /** Modal asking for the PIN again before a sensitive action. Resolves null if cancelled. */
 /** PIN again for a sensitive action. On the person's own listed device (no PIN) it's a plain
  * Confirm/Cancel instead; the server skips the PIN check there. */
-export function askPin(title: string, detail?: string): Promise<string | null> {
-  if (auth.staff?.pinless) return confirmDialog(title, detail || 'Confirm to continue.', 'Confirm').then(ok => ok ? 'none' : null);
+/** Unlock this session for Admin and Sales & Ops with the manager's PIN (once per session). */
+async function unlockWith(pin: string): Promise<void> {
+  const r = await call<{ staff: typeof auth.staff }>('auth.unlock', { pin });
+  if (auth.staff && r.staff) auth.setSession(auth.sessionToken, { ...auth.staff, elevated: true });
+}
+
+/** Inline PIN card shown in place of a locked tab; calls onUnlocked once the PIN is accepted. */
+export function unlockPanel(title: string, onUnlocked: () => void): HTMLElement {
+  const status = h('div', { class: 'status-slot' });
+  const pad = pinPad({
+    label: 'Enter your PIN to unlock',
+    onComplete: async pin => {
+      status.replaceChildren();
+      try { await unlockWith(pin); onUnlocked(); }
+      catch (err) { status.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Unlock failed.')); pad.reset(); pad.focusPad(); }
+    },
+  });
+  setTimeout(() => pad.focusPad());
+  return h('section', { class: 'card narrow stack unlock' },
+    h('h1', {}, title), h('p', { class: 'muted' }, 'Locked. It stays unlocked until you sign out or the screen times out.'), pad, status);
+}
+
+/** Make sure the session is unlocked, asking for the PIN in a dialog if not. Resolves false if cancelled. */
+export function ensureUnlocked(title: string, detail?: string): Promise<boolean> {
+  if (auth.staff?.elevated) return Promise.resolve(true);
   return new Promise(resolve => {
-    const close = (v: string | null) => { overlay.remove(); resolve(v); };
-    const pad = pinPad({ onComplete: pin => close(pin), label: 'Enter your PIN to confirm' });
+    const close = (v: boolean) => { overlay.remove(); resolve(v); };
+    const status = h('div', { class: 'status-slot' });
+    const pad = pinPad({
+      label: 'Enter your PIN to unlock',
+      onComplete: async pin => {
+        status.replaceChildren();
+        try { await unlockWith(pin); close(true); }
+        catch (err) { status.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Unlock failed.')); pad.reset(); pad.focusPad(); }
+      },
+    });
     const overlay = h('div', { class: 'overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       h('div', { class: 'dialog' },
         h('h2', {}, title),
         detail ? h('p', { class: 'muted' }, detail) : null,
-        pad,
-        h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => close(null) }, 'Cancel')));
-    overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(null); });
+        pad, status,
+        h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => close(false) }, 'Cancel')));
+    overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(false); });
     document.body.appendChild(overlay);
     pad.focusPad();
   });

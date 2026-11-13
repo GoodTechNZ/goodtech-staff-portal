@@ -11,7 +11,7 @@ export const SALES_OPS_URL: string = API_URL.replace(/staff-portal\/?$/, 'portal
 export const RETURNS_URL: string = API_URL.replace(/staff-portal\/?$/, 'portal-returns');
 
 export type J = Record<string, any>;
-export type Staff = { id: string; name: string; role: 'staff' | 'manager'; pinless?: boolean };
+export type Staff = { id: string; name: string; role: 'staff' | 'manager'; elevated?: boolean };
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public data: J = {}) { super(message); }
@@ -85,6 +85,8 @@ export async function callUrl<T = J>(url: string, action: string, body: J = {}):
     terminalLostListener();
     throw new ApiError(data.error || 'This terminal is not enrolled.', 403, data);
   }
+  // The server says this session isn't unlocked (e.g. after an idle sign-in elsewhere): forget the flag.
+  if (r.status === 403 && data.elevate && auth.staff?.elevated) auth.setSession(auth.sessionToken, { ...auth.staff, elevated: false });
   if (!r.ok) throw new ApiError(data.error || `Request failed (${r.status}).`, r.status, data);
   if (data.signedOut) auth.setSession('', null);
   return data as T;

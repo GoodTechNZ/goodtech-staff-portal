@@ -1,5 +1,5 @@
 import { call, ApiError, uuid, J } from '../api.ts';
-import { h, mount, message, askPin, busy, money, nzTime } from '../ui.ts';
+import { h, mount, message, confirmDialog, ensureUnlocked, busy, money, nzTime } from '../ui.ts';
 
 // Product-code changes (managers). Cin7 is changed with one stock adjustment: N off the current
 // SKU, N onto the new SKU, same location, at the current SKU's average cost. The portal shows the
@@ -55,13 +55,14 @@ function reviewCard(change: J, onDone: (c: J) => void, onCancel: () => void): HT
   const confirm = h('button', { type: 'button', class: 'btn btn-primary btn-lg' }, 'Confirm in Cin7');
   const cancel = h('button', { type: 'button', class: 'btn btn-ghost', onclick: onCancel }, 'Back');
   confirm.addEventListener('click', async () => {
-    const pin = await askPin('Change product code in Cin7', `${p.quantity} × ${p.source.SKU} → ${p.target.SKU} at ${p.location}.`);
-    if (!pin) return;
+    const detail = `${p.quantity} × ${p.source.SKU} → ${p.target.SKU} at ${p.location}.`;
+    if (!(await confirmDialog('Change product code in Cin7?', detail, 'Confirm in Cin7'))) return;
+    if (!(await ensureUnlocked('Unlock to change product codes', detail))) return;
     await busy(confirm, async () => {
       status.replaceChildren(message('info', 'Updating Cin7… this takes about 15 seconds.'));
       cancel.disabled = true;
       try {
-        const r = await call<{ change: J }>('stock.commit', { id: change.id, pin });
+        const r = await call<{ change: J }>('stock.commit', { id: change.id });
         onDone(r.change);
       } catch (err) {
         status.replaceChildren(message('error', err instanceof ApiError ? err.message : 'Cin7 could not be updated. Check Admin → Product-code changes before trying again.'));

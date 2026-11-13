@@ -1,7 +1,7 @@
 import { auth, call, ApiError, uuid, J } from '../api.ts';
 import { deviceCodePanel } from './codechange.ts';
 import { testingPriorityCard } from './testingpriority.ts';
-import { h, mount, message, scanInput, segmented, askPin, busy, nzTime } from '../ui.ts';
+import { h, mount, message, scanInput, segmented, confirmDialog, busy, nzTime } from '../ui.ts';
 import {
   TESTS, DESTINATIONS, GradingForm, Grade, Destination, TestResult, emptyForm, formFromRecord, problems,
   suggestedDestination, primaryAction, payload, cleanColour, colourEditable,
@@ -208,11 +208,7 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
 
     async function submit(act: 'save' | 'link' | 'update', button: HTMLButtonElement) {
       formStatus.replaceChildren();
-      let pin: string | null = null;
-      if (act === 'update') {
-        pin = await askPin('Change an existing grading record', `This overwrites ${d.row ? 'row ' + d.row : 'the existing record'} in the Grading sheet${existingGrade ? ` (currently grade ${existingGrade})` : ''}.`);
-        if (!pin) return;
-      }
+      if (act === 'update' && !(await confirmDialog('Change an existing grading record?', `This overwrites ${d.row ? 'row ' + d.row : 'the existing record'} in the Grading sheet${existingGrade ? ` (currently grade ${existingGrade})` : ''}.`, 'Overwrite'))) return;
       await busy(button, async () => {
         try {
           let r: J;
@@ -224,7 +220,7 @@ export function gradingScreen(ctx: ScreenCtx): HTMLElement {
             if (lastAttempt?.body !== key) lastAttempt = { body: key, saveId: uuid() };
             r = await call('grading.save', {
               serial: d.serial, saveId: lastAttempt.saveId, version: act === 'update' ? d.version : '0',
-              recordId: act === 'update' ? d.recordId : null, record, pin, listedColour: listed,
+              recordId: act === 'update' ? d.recordId : null, record, listedColour: listed,
             });
           }
           const lines = [`${d.model} · ${d.serial}`, `Grade ${f.grade}${f.destination && !r.linked ? ' → ' + f.destination : ''}`];

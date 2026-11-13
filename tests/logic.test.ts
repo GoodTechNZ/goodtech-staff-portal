@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  gradingRecord, needsPin, bridgeBody, discountedLines, nzDate, validSerial, GRADING_TESTS, HttpError, pickRequest, cin7ErrorText,
+  gradingRecord, needsElevation, bridgeBody, discountedLines, nzDate, validSerial, GRADING_TESTS, HttpError, pickRequest, cin7ErrorText,
 } from '../supabase/functions/staff-portal/logic.ts';
 
 const allPass = Object.fromEntries(GRADING_TESTS.map(t => [t, 'Pass']));
@@ -28,19 +28,16 @@ describe('gradingRecord', () => {
   });
 });
 
-describe('needsPin', () => {
-  it('asks again only for sensitive actions', () => {
-    expect(needsPin('grading', 'save', {})).toBe(false);
-    expect(needsPin('grading', 'save', { recordId: '6ca9a746-6aeb-406d-9c7f-27ee24aed081' })).toBe(true);
-    expect(needsPin('grading', 'link', { recordId: '6ca9a746-6aeb-406d-9c7f-27ee24aed081' })).toBe(false);
-    expect(needsPin('shipping', 'scan', {})).toBe(false);
-    expect(needsPin('shipping', 'override', {})).toBe(false);
-    expect(needsPin('shipping', 'save_settings', {})).toBe(true);
-    expect(needsPin('sales', 'invoice', {})).toBe(true);
-    expect(needsPin('sales', 'void', {})).toBe(true);
-    expect(needsPin('sales', 'create', {})).toBe(false);
-    expect(needsPin('admin', 'staff', {})).toBe(false);
-    expect(needsPin('admin', 'reset_pin', {})).toBe(true);
+describe('needsElevation', () => {
+  it('asks for the PIN only to open Admin or commit a Cin7 code change', () => {
+    expect(needsElevation('grading', 'save')).toBe(false);
+    expect(needsElevation('shipping', 'save_settings')).toBe(false);
+    expect(needsElevation('sales', 'invoice')).toBe(false);
+    expect(needsElevation('sales', 'void')).toBe(false);
+    expect(needsElevation('admin', 'staff')).toBe(true);
+    expect(needsElevation('admin', 'reset_pin')).toBe(true);
+    expect(needsElevation('stock', 'commit')).toBe(true);
+    expect(needsElevation('stock', 'preview')).toBe(false);
   });
 });
 

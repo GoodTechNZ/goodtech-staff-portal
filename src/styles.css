@@ -75,7 +75,16 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .tab:hover { background: var(--surface-2); }
 .tab.on { background: var(--brand-soft); color: var(--brand-text); }
 .who { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
-.who-name { font-weight: 700; }
+.who-switch { position: relative; }
+.who-name { font-weight: 700; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; min-height: 40px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
+.who-name:hover { background: var(--surface-2); }
+.who-name .caret { color: var(--muted); font-size: 0.8em; }
+.who-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 200px; max-height: 70vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: grid; gap: 2px; }
+.who-item { text-align: left; border: 0; background: transparent; padding: 10px 12px; border-radius: 8px; min-height: 44px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+button.who-item:hover { background: var(--surface-2); }
+.who-item.on { background: var(--brand-soft); color: var(--brand-text); }
+.who-signout { border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 4px; color: var(--muted); }
+.unlock { text-align: center; align-items: center; margin: 24px auto; }
 .countdown { font-weight: 600; font-size: 0.9rem; }
 .countdown.warn { color: var(--danger); background: var(--danger-soft); padding: 4px 10px; border-radius: 999px; }
 
@@ -303,9 +312,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .so-card { padding: 12px; }
 }
 @media (max-width: 640px) {
-  /* Phones: no logo or name. Tabs wrap so every section is visible; Sign out stays at the end. */
+  /* Phones: no logo; the name is a compact switch-user button. Tabs wrap so every section is visible; Sign out is in the name menu. */
   .topbar { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; }
-  .topbar .brand, .topbar .who-name { display: none; }
+  .topbar .brand { display: none; }
+  .topbar .who-name { padding: 4px 8px; min-height: 38px; max-width: 96px; }
+  .topbar .who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 28px; }
+  .topbar .who-name .caret { display: none; }
+  .topbar .signout { display: none; } /* in the name menu instead */
   .topbar .tabs { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; gap: 2px; }
   .topbar .who { gap: 6px; }
   .tab { padding: 6px 2px; min-height: 38px; font-size: 0.9rem; white-space: nowrap; text-align: center; }

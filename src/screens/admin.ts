@@ -1,5 +1,5 @@
 import { auth, call, ApiError, J } from '../api.ts';
-import { h, mount, message, askPin, nzTime, nzToday, money, busy } from '../ui.ts';
+import { h, mount, message, confirmDialog, nzTime, nzToday, money, busy } from '../ui.ts';
 import type { ScreenCtx } from '../main.ts';
 import { stockCodeCard } from './codechange.ts';
 
@@ -78,11 +78,9 @@ export function adminScreen(_ctx: ScreenCtx): HTMLElement {
     const btn = h('button', { type: 'button', class: 'btn btn-primary' }, 'Create enrolment code');
     btn.addEventListener('click', async () => {
       out.replaceChildren();
-      const pin = await askPin('Create an enrolment code', 'The code works once, for 15 minutes, on this Wi-Fi network only.');
-      if (!pin) return;
       await busy(btn, async () => {
         try {
-          const r = await call<{ code: string; expiresAt: string }>('admin.enrol_code', { pin });
+          const r = await call<{ code: string; expiresAt: string }>('admin.enrol_code');
           out.replaceChildren(h('div', { class: 'enrol-code' },
             h('div', { class: 'enrol-code-value mono' }, r.code),
             h('div', { class: 'muted small' }, `Use it on the new device before ${nzTime(r.expiresAt)}, connected to this same Wi-Fi network. It works once.`)));
@@ -98,10 +96,9 @@ export function adminScreen(_ctx: ScreenCtx): HTMLElement {
 
     async function run(action: string, args: J, title: string, button?: HTMLButtonElement) {
       slot.replaceChildren();
-      const pin = await askPin(title);
-      if (!pin) return;
+      if (!(await confirmDialog(title, 'Confirm to continue.', 'Confirm'))) return;
       await busy(button || null, async () => {
-        try { await call(`admin.${action}`, { ...args, pin }); slot.replaceChildren(message('ok', 'Done.')); await loadAdmin(); }
+        try { await call(`admin.${action}`, args); slot.replaceChildren(message('ok', 'Done.')); await loadAdmin(); }
         catch (err) { slot.replaceChildren(message('error', (err as Error).message)); }
       });
     }

@@ -1,5 +1,5 @@
 import { call, ApiError, uuid, J } from '../api.ts';
-import { h, mount, message, scanInput, askPin, busy, money, confirmDialog } from '../ui.ts';
+import { h, mount, message, scanInput, busy, money, confirmDialog } from '../ui.ts';
 import { orderRef } from '../orderlinks.ts';
 import type { ScreenCtx } from '../main.ts';
 
@@ -171,18 +171,15 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
     const step = (action: 'resume' | 'invoice' | 'ship' | 'void' | 'get', label: string, cls = 'btn btn-lg') => {
       const b = h('button', { type: 'button', class: cls }, label);
       b.addEventListener('click', async () => {
-        let pin: string | null = null;
         if (action === 'invoice') {
           if (!(await confirmDialog('Payment received?', `Confirm the customer has paid ${money(o.total)} in full. This creates the invoice in Cin7.`, 'Payment received'))) return;
-          pin = await askPin('Confirm payment received'); if (!pin) return;
         }
         if (action === 'void') {
           if (!(await confirmDialog('Void this order?', 'The Cin7 order is voided and stock released.', 'Void order', true))) return;
-          pin = await askPin('Void order'); if (!pin) return;
         }
         await busy(b, async () => {
           try {
-            const r = await call(`sales.${action}`, { id: o.id, pin });
+            const r = await call(`sales.${action}`, { id: o.id });
             if (action === 'ship' && !r.error && r.order?.stage === 'shipped') {
               await ctx.completed('Sale complete', [`${r.order.number} · ${r.order.customer?.name || ''}`, `${money(r.order.total)} — handed over and recorded in Cin7.`]);
               return;

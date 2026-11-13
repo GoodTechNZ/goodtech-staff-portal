@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { codePlan, adjustmentBody, verifyAdjustment, poConfirmsDevice, stockAt, sameBalances, needsPin, HttpError } from '../supabase/functions/staff-portal/logic.ts';
+import { codePlan, adjustmentBody, verifyAdjustment, poConfirmsDevice, stockAt, sameBalances, HttpError } from '../supabase/functions/staff-portal/logic.ts';
 
 const product = (SKU: string, extra: object = {}) => ({ ID: 'id-' + SKU, SKU, Name: SKU + ' name', Status: 'Active', Type: 'Stock', CostingMethod: 'FIFO', AverageCost: 300.12345, AdditionalAttribute4: 'Black', AdditionalAttribute5: '3 - Good', ...extra });
 const bal = (onHand: number, allocated = 0) => ({ onHand, available: onHand - allocated, allocated });
@@ -61,9 +61,5 @@ describe('Cin7 helpers', () => {
     expect(poConfirmsDevice(po, '351906514559486')).toBe(true);
     expect(poConfirmsDevice(po, '359999999999999')).toBe(false);
     expect(poConfirmsDevice({ ...po, StockReceived: { ...po.StockReceived, Status: 'DRAFT' } }, '351906514559486')).toBe(false);
-  });
-  it('asks for the PIN only to confirm', () => {
-    expect(needsPin('stock', 'commit', {})).toBe(true);
-    expect(needsPin('stock', 'preview', {})).toBe(false);
   });
 });

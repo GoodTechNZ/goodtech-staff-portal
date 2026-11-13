@@ -1,10 +1,10 @@
 // Staff portal gateway. Every portal request comes here: it checks the enrolled terminal and the
-// signed-in staff session, asks for the PIN again on sensitive actions, logs the action for the
-// daily summaries. Sessions end only on sign-out or after 5 minutes without activity.
+// signed-in staff session (name only; Admin and Cin7 code changes need the session unlocked with the manager's PIN),
+// logs the action for the daily summaries. Sessions end only on sign-out or after 5 minutes without activity.
 // Grading runs on the portal_grading_* RPCs; Shipping and Sales are forwarded to the existing
 // staff-shipping and staff-sales-desk functions with the signed-in staff name.
 import {
-  HttpError, J, nzDate, validSerial, gradingRecord, uuidOrNull, needsPin, bridgeBody,
+  HttpError, J, nzDate, validSerial, gradingRecord, uuidOrNull, needsElevation, bridgeBody,
   discountedLines, shippingRef, SHIPPING_ACTIONS, SALES_ACTIONS, pickRequest, cin7ErrorText,
   CIN7_STOCK_LOCATIONS, stockAt, sameBalances, codePlan, adjustmentBody, verifyAdjustment, poConfirmsDevice,
 } from './logic.ts';
@@ -14,7 +14,7 @@ const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BRIDGE = Deno.env.get('PORTAL_BRIDGE_TOKEN') || '';
 const ORIGINS = (Deno.env.get('PORTAL_ALLOWED_ORIGINS') || '*').split(',').map(s => s.trim()).filter(Boolean);
 
-type Ctx = { sessionId: string; terminalId: string; staff: { id: string; name: string; role: string; pinless?: boolean } };
+type Ctx = { sessionId: string; terminalId: string; staff: { id: string; name: string; role: string; elevated?: boolean } };
 
 function cors(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
@@ -58,12 +58,6 @@ async function log(ctx: Ctx, module: string, action: string, ref: string | null,
   try {
     await rpc('portal_log', { p_staff: ctx.staff.id, p_session: ctx.sessionId, p_terminal: ctx.terminalId, p_module: module, p_action: action, p_ref: ref, p_outcome: outcome, p_details: details });
   } catch (e) { console.error('portal_log failed', e); }
-}
-
-async function requirePin(ctx: Ctx, pin: unknown, purpose: string) {
-  if (!/^\d{4}$/.test(String(pin ?? ''))) throw new HttpError(403, 'Enter your PIN to confirm.', { pinRequired: true });
-  const r = await rpc('portal_pin_ok', { p_staff: ctx.staff.id, p_pin: String(pin), p_terminal: ctx.terminalId, p_purpose: purpose });
-  if (!r?.ok) throw new HttpError(403, r?.error || 'Wrong PIN.', { pinRequired: true });
 }
 
 async function signOut(ctx: Ctx, reason: string) {
@@ -508,6 +502,12 @@ async function handle(req: Request): Promise<J> {
   const ctx: Ctx = { sessionId: s.sessionId, terminalId: s.terminalId, staff: s.staff };
 
   if (module === 'auth' && action === 'touch') return { ok: true, staff: ctx.staff };
+  if (module === 'auth' && action === 'unlock') {
+    if (!/^\d{4}$/.test(String(b.pin ?? ''))) throw new HttpError(403, 'Enter your PIN.', { elevate: true });
+    const r = await rpc('portal_session_elevate', { p_session: ctx.sessionId, p_pin: String(b.pin) });
+    if (!r?.ok) throw new HttpError(403, r?.error || 'Wrong PIN.', { elevate: true });
+    return { ok: true, staff: { ...ctx.staff, elevated: true } };
+  }
   if (module === 'auth' && action === 'signout') {
     await signOut(ctx, b.reason === 'idle' ? 'idle' : 'manual');
     return { ok: true, signedOut: true };
@@ -515,10 +515,11 @@ async function handle(req: Request): Promise<J> {
   const run = MODULES[module];
   if (!run || !action) throw new HttpError(400, 'Unknown action.');
   if (module === 'admin' && ctx.staff.role !== 'manager') throw new HttpError(403, 'Managers only.');
-  // No PIN again for a person on their own listed device (portal_config 'pinless_terminals').
-  if (needsPin(module, action, b) && !ctx.staff.pinless) {
-    try { await requirePin(ctx, b.pin, module + '.' + action); }
-    catch (e) { await log(ctx, module, action, null, 'denied', { reason: 'pin' }); throw e; }
+  // Admin and Cin7 code changes need the session unlocked with the manager's PIN (auth.unlock); a manager
+  // on their own listed device (portal_config 'pinless_terminals') is unlocked already.
+  if (needsElevation(module, action) && !ctx.staff.elevated) {
+    await log(ctx, module, action, null, 'denied', { reason: 'locked' });
+    throw new HttpError(403, 'Unlock with your PIN to continue.', { elevate: true });
   }
   return await run(ctx, action, b, req);
 }

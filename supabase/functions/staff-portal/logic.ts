@@ -56,12 +56,10 @@ export function uuidOrNull(v: unknown): string | null {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) ? s : null;
 }
 
-// Actions that need the PIN again even though the person is signed in.
-export function needsPin(module: string, action: string, body: J): boolean {
-  if (module === 'grading' && action === 'save') return !!uuidOrNull(body.recordId);
-  if (module === 'shipping') return action === 'save_settings';
-  if (module === 'sales') return ['invoice', 'void'].includes(action);
-  if (module === 'admin') return action !== 'staff' && action !== 'terminals';
+/** Areas that need the manager's PIN once per session (Admin, and committing a Cin7 product-code change).
+ *  Everything else is name-only: staff pick their name and work. */
+export function needsElevation(module: string, action: string): boolean {
+  if (module === 'admin') return true;
   if (module === 'stock') return action === 'commit';
   return false;
 }
