@@ -15,10 +15,10 @@ export function signInScreen(onSignedIn: () => void, notice?: string): HTMLEleme
 
   async function namesStep(note?: string) {
     const status = h('div', { class: 'status-slot' }, note ? message('info', note) : null);
-    mount(body, h('h1', {}, 'Who are you?'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status, h('p', { class: 'muted small' }, 'Loading…'));
+    mount(body, h('h1', {}, 'Yo whatssup Gs!'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status, h('p', { class: 'muted small' }, 'Loading…'));
     try {
       const r = await call<{ staff: Person[] }>('auth.staff');
-      mount(body, h('h1', {}, 'Who are you?'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status,
+      mount(body, h('h1', {}, 'Yo whatssup Gs!'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status,
         h('div', { class: 'name-grid' }, r.staff.map(p => h('button', { type: 'button', class: 'btn btn-name', onclick: () => p.noPin ? signInNoPin(p) : p.hasPin ? pinStep(p) : newPinStep(p) }, p.name))));
     } catch (err) {
       fail(status, err);
