@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../src/api.ts', () => ({ call: vi.fn(), ApiError: class extends Error {}, uuid: () => 'x', auth: { staff: null } }));
 import { addOnsFor, addOnLabel } from '../src/screens/sales.ts';
@@ -29,5 +30,17 @@ describe('sales add-ons', () => {
   });
   it('labels them simply', () => {
     expect(ACCESSORIES.slice(0, 9).map(addOnLabel)).toEqual(['Clear gel case', 'Clear gel case', 'MagSafe clear case', 'Clear gel case', 'MagSafe black silicone case', 'Screen protector', 'Screen protector', 'Screen protector', 'Screen protector']);
+  });
+});
+
+describe('sales pick list', () => {
+  it('groups lines by SKU and fills in scanned IMEIs', async () => {
+    const { pickListPage } = await import('../src/screens/sales.ts');
+    const page = pickListPage({ number: 'SO67500', staff: 'Li', customer: { name: 'Sam Test', phone: '021 000' }, memo: 'Gift wrap',
+      lines: [{ sku: 'PH14128BK-2', name: 'iPhone 14 128GB Black', imei: '356442166605598' }, { sku: 'ACSCNPRFTPH', name: 'iPhone Screen Protector' }, { sku: 'ACSCNPRFTPH', name: 'iPhone Screen Protector' }] }, new Date('2026-11-14T01:00:00Z'));
+    const rows = [...page.querySelectorAll('tbody tr')].map(r => [...r.querySelectorAll('td')].map(td => td.textContent));
+    expect(rows).toEqual([['☐', '1', 'PH14128BK-2', 'iPhone 14 128GB Black', '356442166605598'], ['☐', '2', 'ACSCNPRFTPH', 'iPhone Screen Protector', '']]);
+    expect(page.querySelector('.pick-so')?.textContent).toBe('SO67500');
+    expect(page.textContent).toContain('Note: Gift wrap');
   });
 });

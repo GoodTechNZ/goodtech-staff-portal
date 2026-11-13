@@ -38,6 +38,38 @@ export function addOnsFor(device: { name: string; model?: string }, accessories:
 export const addOnLabel = (a: Product): string =>
   /screen protector/i.test(a.name) ? 'Screen protector' : /magsafe/i.test(a.name) ? (/silicone/i.test(a.name) ? 'MagSafe black silicone case' : 'MagSafe clear case') : /case/i.test(a.name) ? 'Clear gel case' : a.name;
 
+/** Pick list for one in-store order (same layout as the Dashboard's pick lists), printed from a
+ * print-only container; the IMEIs scanned into the cart are filled in. */
+export function pickListPage(o: J, printedAt = new Date()): HTMLElement {
+  const printed = new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', dateStyle: 'medium', timeStyle: 'short' }).format(printedAt);
+  const lines: J[] = o.lines || [];
+  const grouped = new Map<string, { sku: string; name: string; qty: number; imeis: string[] }>();
+  for (const l of lines) {
+    const g = grouped.get(l.sku) || { sku: String(l.sku), name: String(l.name), qty: 0, imeis: [] as string[] };
+    g.qty += 1; if (l.imei) g.imeis.push(l.imei);
+    grouped.set(l.sku, g);
+  }
+  return h('section', { class: 'pick-page' },
+    h('div', { class: 'pick-head' },
+      h('div', {}, h('div', { class: 'pick-so' }, o.number || ''), h('div', {}, o.customer?.name || ''), o.customer?.phone ? h('div', { class: 'muted' }, o.customer.phone) : null),
+      h('div', { class: 'pick-meta' }, h('div', {}, o.staff ? 'Sold by ' + o.staff : ''), h('div', { class: 'pick-method' }, 'IN-STORE'))),
+    h('table', { class: 'pick-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, '✓'), h('th', {}, 'Qty'), h('th', {}, 'SKU'), h('th', {}, 'Product'), h('th', {}, 'IMEI / serial'))),
+      h('tbody', {}, [...grouped.values()].map(g => h('tr', {}, h('td', { class: 'tick' }, '☐'), h('td', { class: 'qty' }, String(g.qty)),
+        h('td', { class: 'mono' }, g.sku), h('td', {}, g.name), h('td', { class: 'serial mono' }, g.imeis.join(', ')))))),
+    o.memo ? h('div', { class: 'pick-note' }, 'Note: ' + o.memo) : null,
+    h('div', { class: 'pick-foot' }, h('span', {}, 'Picked by ____________________'), h('span', { class: 'muted' }, `Printed ${printed}`)));
+}
+
+function printPickList(o: J) {
+  document.getElementById('print-root')?.remove();
+  const root = h('div', { id: 'print-root' }, pickListPage(o));
+  document.body.appendChild(root);
+  const done = () => { root.remove(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+}
+
 export function salesScreen(ctx: ScreenCtx): HTMLElement {
   const root = h('div', { class: 'stack' });
   let lines: Line[] = [];
@@ -167,13 +199,18 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
     if (o.stage === 'picking') actions.push(step('invoice', 'Payment received', 'btn btn-primary btn-lg'));
     if (o.stage === 'invoiced') actions.push(step('ship', 'Complete purchase — hand over', 'btn btn-primary btn-lg'));
     if (['draft', 'picking'].includes(o.stage)) actions.unshift(step('void', 'Void', 'btn btn-ghost'));
+    if (['picking', 'invoiced'].includes(o.stage)) {
+      const pb = h('button', { type: 'button', class: 'btn btn-lg' }, 'Print pick list');
+      pb.addEventListener('click', () => printPickList(o));
+      actions.splice(actions.length - 1, 0, pb);
+    }
     actions.unshift(step('get', 'Refresh', 'btn btn-ghost'));
 
     mount(root, h('section', { class: 'card stack' },
       h('div', { class: 'device-head' }, h('div', {}, h('h1', {}, orderRef(o.number)), h('div', { class: 'muted' }, `${o.customer?.name || ''} · ${o.customer?.email || ''}`)), h('strong', {}, money(o.total))),
       o.stage === 'voided' ? h('span', { class: 'chip chip-voided' }, 'Voided') :
         h('div', { class: 'stages' }, STAGES.map((s, i) => h('span', { class: 'stage' + (i < stageIdx ? ' done' : i === stageIdx ? ' now' : '') }, STAGE_LABEL[s]))),
-      h('table', {}, h('tbody', {}, (o.lines || []).map((l: J) => h('tr', {}, h('td', {}, l.name, h('span', { class: 'muted small mono' }, l.sku + (l.imei ? ' · ' + l.imei : ''))), h('td', { class: 'num' }, money(Number(l.price))))))),
+      h('table', {}, h('tbody', {}, (o.lines || []).map((l: J) => h('tr', {}, h('td', {}, l.name, ' ', h('span', { class: 'muted small mono' }, l.sku + (l.imei ? ' · ' + l.imei : ''))), h('td', { class: 'num' }, money(Number(l.price))))))),
       slot,
       h('div', { class: 'row end wrap' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => boot() }, 'Back to sales'), actions)));
   }
