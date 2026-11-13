@@ -169,7 +169,48 @@ async function shipping(ctx: Ctx, action: string, b: J) {
 }
 
 // ---------- Sales (staff-sales-desk) ----------
+// Amend an unpaid order: void it in Cin7 (releasing its stock), refresh the synced Ready For Sale
+// availability of the products on the new cart from live Cin7 (the sync runs every 10 minutes, so
+// the just-released devices would still look allocated), then create the corrected order.
+async function amendSale(ctx: Ctx, b: J) {
+  const id = uuidOrNull(b.id);
+  if (!id) throw new HttpError(400, 'Choose the order to change.');
+  if (!uuidOrNull(b.requestId)) throw new HttpError(400, 'Invalid request. Refresh and try again.');
+  const voided = await bridge('staff-sales-desk', bridgeBody('sales', 'void', { id }, ctx.staff));
+  const old = voided.data.order;
+  const voidOk = voided.status < 400 && !voided.data.error && old?.stage === 'voided';
+  await log(ctx, 'sales', 'void', old?.number || id, voidOk ? 'ok' : 'error', { orderId: id, amend: true, error: voidOk ? null : String(voided.data.error || 'not voided').slice(0, 300) });
+  if (!voidOk) throw new HttpError(400, `${old?.number || 'The order'} could not be voided, so nothing was changed. ${voided.data.error || 'Cin7 did not confirm the void.'}`);
+
+  const ids = [...new Set((Array.isArray(b.lines) ? b.lines : []).map((l: J) => String(l?.id || '')).filter(Boolean))].slice(0, 30) as string[];
+  for (const pid of ids) {
+    try {
+      const [prod] = await rest('cin7_products?select=sku&product_id=eq.' + encodeURIComponent(pid) + '&limit=1');
+      if (!prod?.sku) continue;
+      const live = await cin7('/ref/productavailability?SKU=' + encodeURIComponent(prod.sku) + '&Location=' + encodeURIComponent('Ready For Sale') + '&Limit=1000');
+      const rows = (live.ProductAvailabilityList || []).filter((r: J) => r.SKU === prod.sku && r.Location === 'Ready For Sale');
+      if (rows.length !== 1 || rows[0].Bin || rows[0].Batch) continue; // bins/batches: leave it to the next sync
+      const r = rows[0];
+      await rest('cin7_product_availability?product_id=eq.' + encodeURIComponent(pid) + '&location=eq.' + encodeURIComponent('Ready For Sale'), {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ on_hand: Number(r.OnHand), allocated: Number(r.Allocated), available: Number(r.Available) }),
+      });
+    } catch (e) { console.error('availability refresh failed', pid, e); }
+  }
+
+  const created = await bridge('staff-sales-desk', bridgeBody('sales', 'create', { ...b, mode: 'live' }, ctx.staff));
+  const order = created.data.order;
+  const failed = created.status >= 400 || !!created.data.error;
+  await log(ctx, 'sales', 'create', order?.number || order?.id || b.requestId, failed ? 'error' : 'ok', {
+    orderId: order?.id ?? null, stage: order?.stage ?? null, total: order?.total ?? null, lines: order?.lines?.length ?? null,
+    discountedLines: discountedLines(order), replaces: old?.number || id, error: failed ? String(created.data.error).slice(0, 300) : null,
+  });
+  if (created.status >= 400) throw new HttpError(400, created.data.error || 'Sales request failed.', { voided: old });
+  return { ...created.data, voided: old };
+}
+
 async function sales(ctx: Ctx, action: string, b: J) {
+  if (action === 'amend') return await amendSale(ctx, b);
   if (!SALES_ACTIONS.includes(action)) throw new HttpError(400, 'Unknown sales action.');
   const { status, data } = await bridge('staff-sales-desk', bridgeBody('sales', action, b, ctx.staff));
   if (!['bootstrap', 'search', 'get'].includes(action)) {

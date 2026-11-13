@@ -4,7 +4,9 @@ import { orderRef } from '../orderlinks.ts';
 import type { ScreenCtx } from '../main.ts';
 
 // In-store sales, driven by the existing staff-sales-desk function:
-// cart → create (Cin7 order + picking) → confirm payment (PIN, invoice) → complete purchase.
+// cart → create (Cin7 order + picking) → confirm payment (invoice) → complete purchase.
+// Before payment, "Back — edit order" reloads the order into the cart; saving voids it and creates
+// the corrected order (gateway sales.amend).
 
 type Product = { id: string; sku: string; name: string; price: number; available: number; serialRequired: boolean; imei?: string; model?: string };
 type Line = Product & { key: string; salePrice: number };
@@ -76,6 +78,10 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
   let requestId = uuid();
   let accessories: Product[] = [];
   let orders: J[] = [];
+  // Customer details survive re-rendering the cart (adding a product used to clear them).
+  let cust = { name: '', email: '', phone: '', memo: '' };
+  /** The Cin7 order being amended: saving voids it and creates the corrected order. */
+  let amending: J | null = null;
 
   async function boot() {
     mount(root, h('section', { class: 'card' }, h('h1', {}, 'Sales'), h('p', { class: 'muted' }, 'Loading…')));
@@ -113,32 +119,49 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
       cartView();
     }
 
-    const name = h('input', { type: 'text', placeholder: 'Customer name', maxLength: 150, autocomplete: 'off' });
-    const email = h('input', { type: 'email', placeholder: 'Email', maxLength: 250, autocomplete: 'off' });
-    const phone = h('input', { type: 'tel', placeholder: 'Phone (optional)', maxLength: 40, autocomplete: 'off' });
-    const memo = h('textarea', { rows: 2, maxLength: 1000, placeholder: 'Order memo (optional)' });
+    const field = <T extends HTMLInputElement | HTMLTextAreaElement>(el: T, k: keyof typeof cust) => {
+      el.value = cust[k]; el.addEventListener('input', () => { cust[k] = el.value; requestId = uuid(); }); return el;
+    };
+    const name = field(h('input', { type: 'text', placeholder: 'Customer name', maxLength: 150, autocomplete: 'off' }), 'name');
+    const email = field(h('input', { type: 'email', placeholder: 'Email', maxLength: 250, autocomplete: 'off' }), 'email');
+    const phone = field(h('input', { type: 'tel', placeholder: 'Phone (optional)', maxLength: 40, autocomplete: 'off' }), 'phone');
+    const memo = field(h('textarea', { rows: 2, maxLength: 1000, placeholder: 'Order memo (optional)' }), 'memo');
     const total = () => Math.round(lines.reduce((s, l) => s + l.salePrice, 0) * 100) / 100;
     const totalEl = h('strong', {}, money(total()));
 
-    const create = h('button', { type: 'button', class: 'btn btn-primary btn-lg', disabled: !lines.length }, 'Create order in Cin7');
-    create.addEventListener('click', () => busy(create, async () => {
-      slot.replaceChildren();
-      try {
-        const r = await call('sales.create', {
-          mode: 'live', requestId, memo: memo.value.trim(),
-          customer: { name: name.value.trim(), email: email.value.trim(), phone: phone.value.trim() },
-          lines: lines.map(l => ({ id: l.id, price: l.salePrice, ...(l.imei ? { imei: l.imei } : {}) })),
-        });
-        lines = []; requestId = uuid();
-        orderView(r.order, r.error);
-      } catch (err) { slot.replaceChildren(message('error', (err as Error).message)); }
-    }));
+    const create = h('button', { type: 'button', class: 'btn btn-primary btn-lg', disabled: !lines.length }, amending ? `Save changes — replace ${amending.number}` : 'Create order in Cin7');
+    create.addEventListener('click', async () => {
+      const old = amending;
+      if (old && !(await confirmDialog(`Replace ${old.number}?`, `${old.number} is voided in Cin7 and a new order is created with these changes. Stock on the old order is released first.`, 'Save changes'))) return;
+      await busy(create, async () => {
+        slot.replaceChildren();
+        try {
+          const body = {
+            mode: 'live', requestId, memo: memo.value.trim(),
+            customer: { name: name.value.trim(), email: email.value.trim(), phone: phone.value.trim() },
+            lines: lines.map(l => ({ id: l.id, price: l.salePrice, ...(l.imei ? { imei: l.imei } : {}) })),
+          };
+          // Amending: the gateway voids the old order, then creates this one (one request).
+          const r = old ? await call('sales.amend', { ...body, id: old.id }) : await call('sales.create', body);
+          if (old) amending = null;
+          lines = []; requestId = uuid(); cust = { name: '', email: '', phone: '', memo: '' };
+          orderView(r.order, r.error);
+        } catch (err) {
+          slot.replaceChildren(message('error', (err as Error).message));
+          // The old order was voided but the new one failed: the cart now creates a fresh order.
+          if (old && err instanceof ApiError && err.data?.voided) amending = null;
+          if (old && !amending) { create.textContent = 'Create order in Cin7'; slot.append(message('warn', `${old.number} was voided. Fix the problem above, then create the order again.`)); }
+        }
+      });
+    });
+    const cancelEdit = amending ? h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { const o = amending; if (!o) return cartView(); amending = null; lines = []; cust = { name: '', email: '', phone: '', memo: '' }; requestId = uuid(); refresh(o); } }, 'Cancel changes') : null;
 
     mount(root,
       h('div', { class: 'layout-side' },
         h('div', { class: 'stack' },
-          h('section', { class: 'card stack' }, h('h1', {}, 'Sales'), search, results,
-),
+          h('section', { class: 'card stack' }, h('h1', {}, amending ? `Editing ${amending.number}` : 'Sales'),
+            amending ? message('info', `Change devices, prices or the customer, then save. ${amending.number} stays as it is in Cin7 until you save.`) : null,
+            search, results),
           h('section', { class: 'card stack' }, h('h2', {}, 'Cart'),
             lines.length ? lines.map(l => {
               const price = h('input', { type: 'number', min: '0', step: '0.01', value: String(l.salePrice), 'aria-label': `Price for ${l.sku}` });
@@ -153,7 +176,7 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
             }) : h('p', { class: 'muted' }, 'Scan a device or search for a product.'),
             h('div', { class: 'row between' }, h('span', {}, 'Total (GST incl.)'), totalEl)),
           h('section', { class: 'card stack' }, h('h2', {}, 'Customer'), name, h('div', { class: 'row wrap' }, h('div', { class: 'grow' }, email), h('div', { class: 'grow' }, phone)), memo, slot,
-            h('div', { class: 'row end' }, create))),
+            h('div', { class: 'row end wrap' }, cancelEdit, create))),
         h('aside', { class: 'card recent' }, h('h3', {}, 'My recent orders'),
           orders.length ? h('div', { class: 'list' }, orders.map(o => h('button', { type: 'button', class: 'list-item', onclick: () => refresh(o) },
             h('strong', {}, o.number), ' ', h('span', { class: 'chip chip-' + o.stage }, STAGE_LABEL[o.stage] || o.stage),
@@ -202,6 +225,8 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
       actions.splice(actions.length - 1, 0, pb);
     }
     actions.unshift(step('get', 'Refresh', 'btn btn-ghost'));
+    // Before payment, go back to the cart with this order loaded to amend it.
+    const editable = ['draft', 'picking'].includes(o.stage);
 
     mount(root, h('section', { class: 'card stack' },
       h('div', { class: 'device-head' }, h('div', {}, h('h1', {}, orderRef(o.number)), h('div', { class: 'muted' }, `${o.customer?.name || ''} · ${o.customer?.email || ''}`)), h('strong', {}, money(o.total))),
@@ -209,7 +234,18 @@ export function salesScreen(ctx: ScreenCtx): HTMLElement {
         h('div', { class: 'stages' }, STAGES.map((s, i) => h('span', { class: 'stage' + (i < stageIdx ? ' done' : i === stageIdx ? ' now' : '') }, STAGE_LABEL[s]))),
       h('table', {}, h('tbody', {}, (o.lines || []).map((l: J) => h('tr', {}, h('td', {}, l.name, ' ', h('span', { class: 'muted small mono' }, l.sku + (l.imei ? ' · ' + l.imei : ''))), h('td', { class: 'num' }, money(Number(l.price))))))),
       slot,
-      h('div', { class: 'row end wrap' }, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => boot() }, 'Back to sales'), actions)));
+      h('div', { class: 'row end wrap' },
+        editable ? h('button', { type: 'button', class: 'btn', onclick: () => editOrder(o) }, '← Back — edit order') : null,
+        h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { amending = null; boot(); } }, 'New sale'), actions)));
+  }
+
+  /** Load an unpaid order back into the cart so it can be amended. */
+  function editOrder(o: J) {
+    amending = o;
+    lines = (o.lines || []).map((l: J) => ({ ...l, price: Number(l.catalogue_price ?? l.price), salePrice: Number(l.price), key: uuid() }) as Line);
+    cust = { name: o.customer?.name || '', email: o.customer?.email || '', phone: o.customer?.phone || '', memo: o.memo || '' };
+    requestId = uuid();
+    cartView();
   }
 
   boot();
