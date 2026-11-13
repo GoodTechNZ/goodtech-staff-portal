@@ -21,7 +21,7 @@ export function signInScreen(onSignedIn: () => void, notice?: string): HTMLEleme
 
   async function namesStep(note?: string) {
     const status = h('div', { class: 'status-slot' }, note ? message('info', note) : null);
-    const heading = () => [h('h1', {}, 'Yo whatssup Gs!'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status];
+    const heading = () => [h('h1', {}, 'Hi!'), h('p', { class: 'muted' }, 'Tap your name to sign in.'), status];
     mount(body, ...heading(), h('p', { class: 'muted small' }, 'Loading…'));
     try {
       const r = await call<{ staff: Person[] }>('auth.staff');
